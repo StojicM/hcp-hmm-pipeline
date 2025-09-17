@@ -1,0 +1,38 @@
+paths:
+  raw_dtseries_dir: data/raw
+  atlas_dlabel: data/atlas/300Parcels_Yeo2011_7Networks.dlabel.nii
+  ptseries_dir: data/derivatives/ptseries
+  hmm_dir: data/derivatives/hmm
+  betas_dir: data/derivatives/hmm/betas
+  parcel_labels_dlabel: data/atlas/300Parcels_Yeo2011_7Networks.dlabel.nii
+  subjects_csv: data/subjects_info.csv
+  # fd_csv: data/confounds/mean_fd.csv
+
+hmm:
+  K: 6
+  cov: diag
+  max_iter: 500
+  tol: 0.001
+  seed: 42
+  tr_sec: 0.72
+
+parcellate:
+  method: MEAN
+  suffix: Yeo300
+
+palm:
+  enabled: true         # set true to run PALM at the end
+  n_perm: 5000
+  two_tailed: true
+  tfce: false 
+  tfce2D: false          # enable for surface/2D TFCE if applicable
+  cifti: true            # requires PALM with CIFTI support
+  palm_bin: palm         # path or name of the PALM binary
+
+logging:
+  format: plain          # json | plain
+  level: INFO            # DEBUG | INFO | WARNING | ERROR
+
+group_design:
+  contrast: sex          # primary hypothesis: male vs female
+  demean: []
