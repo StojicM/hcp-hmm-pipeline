@@ -1,0 +1,50 @@
+paths:
+  raw_dtseries_dir: /run/media/mirex/Cruzer/hcp_results/
+  atlas_dlabel: data/atlas/300Parcels_Yeo2011_7Networks.dlabel.nii
+  ptseries_dir: data/derivatives/ptseries
+  hmm_dir: data/derivatives/hmm
+  betas_dir: data/derivatives/hmm/betas
+  parcel_labels_dlabel: data/atlas/300Parcels_Yeo2011_7Networks.dlabel.nii
+  subjects_csv: data/subjects_info.csv
+  # Optional volumetric labels NIfTI with integer codes 1..P matching parcel order
+  # parcel_labels_nii: data/atlas/Yeo300_2mm_parcels.nii.gz
+  surface_dir: data/atlas/fsLR_32k_surfaces
+
+logging:
+  format: plain          # json | plain
+  level: INFO            # DEBUG | INFO | WARNING | ERROR
+
+hmm:
+  K: 4
+  cov: diag
+  max_iter: 1000
+  tol: 0.001
+  seed: 42
+  tr_sec: 0.72
+
+parcellate:
+  method: MEAN
+  suffix: Yeo300
+  
+stats:
+  n_perm_rm: 100        # permutations for repeated-measures state stats
+  n_perm_between: 200   # permutations for global between-subject stats
+
+group_design:
+  contrast: sex          # sex, or intercept
+  demean: ["fd"]
+  include_fd: true
+
+palm:
+  enabled: true         # set true to run PALM at the end
+  n_perm: 2500
+  two_tailed: true
+  tfce: false 
+  tfce2D: false          # enable for surface/2D TFCE if applicable
+  cifti: true            # requires PALM with CIFTI support
+  palm_bin: palm         # path or name of the PALM binary
+  ise: true #  Keep ise: true for one-sample (intercept) tests. If you later switch to a between-group contrast (e.g., sex), turn ise off (permutations are appropriate there).
+  use_zscored: false
+
+summary:
+  build_summary: true

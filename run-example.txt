@@ -1,0 +1,89 @@
+Optimize it: 
+Generators (Yelds), Concurency, Cython, Compile libs (NumPy, pandas compiled in C), use pypy
+
+Example commands to run the HCP-HMM pipeline
+============================================
+
+0.  Ensure your Python environment has the project installed (or add the
+    repository to `PYTHONPATH`) and that `wb_command` (Connectome Workbench)
+    is on the PATH.
+
+1 > RUN DIRECTLY THROUGH pipeline.py and skip the cli.py file
+        
+        python -m hcp_hmm.pipeline --config pipeline.yaml [--force]
+    
+    You can also run it using the bundled CLI and YAML configuration:
+        
+        python -m hcp_hmm.cli run --config pipeline.yaml [--force]
+
+    Add `--force` to recompute stages even if outputs already exist.
+
+2.  To execute individual stages, use the subcommands below (adjust paths as
+    needed):
+
+    * Parcellate all dtseries into ptseries:
+
+          python -m hcp_hmm.cli parcellate \
+              --indir data/raw \
+              --dlabel data/atlas/300Parcels_Yeo2011_7Networks.dlabel.nii \
+              --outdir data/derivatives/ptseries \
+              --suffix Yeo300
+
+    * Concatenate ptseries into `train_X.npy` + index CSV:
+
+          python -m hcp_hmm.cli concat \
+              --indir data/derivatives/ptseries \
+              --outdir data/derivatives/hmm
+
+    * Fit the HMM (writes states, metrics, and model artifacts):
+
+          python -m hcp_hmm.cli fit \
+              --in-dir data/derivatives/hmm \
+              --out-dir data/derivatives/hmm \
+              --K 6 \
+              --cov diag \
+              --subjects-csv data/subjects_info.csv
+
+    * Generate β maps, z-score them, and merge for group analyses:
+
+          python -m hcp_hmm.cli state-maps --dtseries-dir data/raw \
+              --states-dir data/derivatives/hmm/per_subject_states \
+              --out-dir data/derivatives/hmm/betas --K 6
+
+          python -m hcp_hmm.cli zscore --dtseries-dir data/raw \
+              --betas-dir data/derivatives/hmm/betas --K 6
+
+          python -m hcp_hmm.cli group-merge --betas-dir data/derivatives/hmm/betas \
+              --K 6 --out data/derivatives/hmm/betas/group \
+              --subjects-used data/derivatives/hmm/betas/group/subjects_used.csv
+
+    * Compute stats (repeated-measures and between-subject):
+
+          python -m hcp_hmm.cli stats-rm \
+              --in-csv data/derivatives/hmm/metrics/metrics_state_6S.csv \
+              --K 6 \
+              --out data/derivatives/hmm/metrics/stats_state_6S_rm.csv
+
+          python -m hcp_hmm.cli stats-between \
+              --in-csv data/derivatives/hmm/metrics/metrics_global_6S.csv \
+              --out data/derivatives/hmm/metrics/stats_global_6S.csv
+
+    * Rebuild the per-state summary (WHEN/WHERE reports and BrainSpace figures):
+
+          python -m hcp_hmm.cli summary \
+              --hmm-dir data/derivatives/hmm \
+              --betas-dir data/derivatives/hmm/betas \
+              --K 6
+
+      Optional helpers:
+
+          python -m hcp_hmm.cli summary --config pipeline.yaml \
+              --surface-dir /path/to/fs_LR_surfaces
+
+3.  For PALM inference, ensure PALM is available and run:
+
+        python -m hcp_hmm.cli palm \
+            --group-dir data/derivatives/hmm/betas/group \
+            --K 6 --n-perm 5000 --two-tailed --palm-bin palm
+
+Adjust the `K` value or paths to match your configuration.

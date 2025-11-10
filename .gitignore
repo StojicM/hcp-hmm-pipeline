@@ -1,0 +1,6 @@
+data/
+hcp_hmm/__pycache__/
+Results/
+subjects_info.csv
+ptseries-info 
+dtseries.txt
