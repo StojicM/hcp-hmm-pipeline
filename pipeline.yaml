@@ -32,7 +32,7 @@ stats:
 
 group_design:
   contrast: sex          # sex, or intercept
-  demean: ["fd"]
+  demean: ["fd"]         # head motion
   include_fd: true
 
 palm:
