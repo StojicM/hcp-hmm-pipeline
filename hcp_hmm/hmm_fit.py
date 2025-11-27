@@ -305,7 +305,8 @@ class HMMRunner:
                         transparent_bg=False,
                     )
                 except Exception as e:
-                    log.warning("fit_brainspace_betas_failed", extra={"state": int(s), "kind": kind, "err": str(e)})
+                    # Log both the tag and the error string for visibility in plain format
+                    log.warning(f"fit_brainspace_betas_failed: {e}", extra={"state": int(s), "kind": kind, "err": str(e)})
 
     def _prepare_covariates(self) -> Tuple[List[str], Dict[str, Dict[str, object]], Dict[str, Dict[str, object]]]:
         """Load optional subject covariates and expose lookups by Subject/UID."""

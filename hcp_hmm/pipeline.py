@@ -57,6 +57,7 @@ class PipelineConfig:
     stats: Optional["StatsParams"] = None
     logging: Optional["LoggingParams"] = None
     group_design: Optional["GroupDesignParams"] = None
+    summary: "SummaryParams" = field(default_factory=SummaryParams)
 
     @staticmethod
     def from_yaml(path: Path) -> "PipelineConfig":
@@ -105,8 +106,15 @@ class PipelineConfig:
             group_design = GroupDesignParams(**gd_cfg)
         else:
             group_design = None
+        summary_cfg = data.get("summary")
+        if isinstance(summary_cfg, dict):
+            summary = SummaryParams(**summary_cfg)
+        elif isinstance(summary_cfg, bool):
+            summary = SummaryParams(build_summary=summary_cfg)
+        else:
+            summary = SummaryParams()
 
-        return PipelineConfig(paths=paths, hmm=hmm, parcellate=parc, palm=palm, stats=stats, logging=logging_params, group_design=group_design)
+        return PipelineConfig(paths=paths, hmm=hmm, parcellate=parc, palm=palm, stats=stats, logging=logging_params, group_design=group_design, summary=summary)
 
 
 @dataclass
@@ -490,12 +498,12 @@ class Pipeline:
             self.palm()
         
         #2 Build summary if Palm #ToDo: build with or without PALM
-        if getattr(self.configs, 'summary', None) and self.configs.build_summary.enabled:
+        if getattr(self.configs.summary, 'build_summary', False):
             self.build_summary()
             
         #ToDo:
         #3 Extract meaning and merging answer on "when + where"  
-        # if getattr(self.configs, 'summary', None) and self.configs.build_summary.enabled:
+        # if getattr(self.configs.summary, 'build_summary', False):
         #     self.useful_states_summary()
         try:
             self.useful_states_summary()

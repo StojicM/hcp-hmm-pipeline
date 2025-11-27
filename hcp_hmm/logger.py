@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import warnings
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -50,6 +51,20 @@ class JsonFormatter(logging.Formatter):
 
 
 _configured = False
+_nibabel_filter_installed = False
+
+
+class _DropNibabelNoise(logging.Filter):
+    """Suppress noisy nibabel warnings that are benign for this pipeline."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if "vox offset" in msg and "not divisible by 16" in msg:
+            return False
+        if "pixdim" in msg and "should be non-zero" in msg:
+            return False
+        if "pixdim[0]" in msg and "qfac" in msg:
+            return False
+        return True
 
 
 def configure_logging(fmt: Optional[str] = None, level: Optional[str] = None) -> None:
@@ -70,6 +85,31 @@ def configure_logging(fmt: Optional[str] = None, level: Optional[str] = None) ->
         root.removeHandler(h)
     root.addHandler(handler)
     root.setLevel((level or "INFO").upper())
+
+    # Silence repeated nibabel SPM-compatibility warnings about vox offset alignment.
+    global _nibabel_filter_installed
+    if not _nibabel_filter_installed:
+        filt = _DropNibabelNoise()
+        logging.getLogger().addFilter(filt)
+        logging.getLogger("nibabel").addFilter(filt)
+        # Also silence the matching warnings emitted via the warnings module.
+        warnings.filterwarnings(
+            "ignore",
+            message=".*vox offset.*not divisible by 16.*",
+            module="nibabel.*",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=".*pixdim.*should be non-zero.*",
+            module="nibabel.*",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            message=".*pixdim\\[0\\].*qfac.*",
+            module="nibabel.*",
+        )
+        _nibabel_filter_installed = True
+
     global _configured
     _configured = True
 

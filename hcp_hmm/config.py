@@ -154,3 +154,9 @@ class GroupDesignParams:
     include_fd: Optional[bool] = None
     stacking: str = "subject-major"
     subject_order_file: Optional[Path] = None
+
+
+@dataclass
+class SummaryParams:
+    """Toggle for building the final summary."""
+    build_summary: bool = False
