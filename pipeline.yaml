@@ -15,7 +15,7 @@ logging:
   level: INFO            # DEBUG | INFO | WARNING | ERROR
 
 hmm:
-  K: 4
+  K: 6
   cov: diag
   max_iter: 1000
   tol: 0.001
@@ -37,7 +37,7 @@ group_design:
 
 palm:
   enabled: true         # set true to run PALM at the end
-  n_perm: 2500
+  n_perm: 5000
   two_tailed: true
   tfce: false 
   tfce2D: false          # enable for surface/2D TFCE if applicable
