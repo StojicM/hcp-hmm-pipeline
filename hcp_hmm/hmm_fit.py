@@ -54,7 +54,6 @@ def intervisit_intervals(states: numpy.ndarray, s: int):
 
 def stationary_distribution(P: numpy.ndarray, tol=1e-12):
     """Compute stationary distribution of a Markov chain with transition `P`.
-
     Solves `(P^T - I) pi = 0` with a sum-to-one constraint via least squares,
     then normalizes and clips for numerical stability.
     """
@@ -329,7 +328,8 @@ class HMMRunner:
         # Normalize index columns to a standard schema
         cols = {c.lower(): c for c in idx.columns}
         sid_key = None
-        for k in ("subject", "sid", "subject_id", "uid", "id"):
+        # for k in ("subject", "sid", "subject_id", "uid", "id"):
+        for k in ("subject_id"):
             if k in cols:
                 sid_key = cols[k]; break
         if sid_key is None:
