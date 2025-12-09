@@ -41,7 +41,7 @@ Metrics (per subject)
 
 Notes
 - The training array is memory-mapped during fit to reduce RAM pressure.
-- If BrainSpace and surfaces are available, state betas are rendered as PNGs in `summary/`.
+- BrainSpace rendering of state betas has been disabled; only numeric outputs are produced.
 
 Interpreting entropy metrics
 - `occ_entropy_bits` (occupancy entropy): Shannon entropy of the stationary distribution `π` implied by `P`. Higher values indicate more uniform long-run occupancy across states; lower values indicate that the chain concentrates on a few states.

@@ -117,7 +117,7 @@ class PtSeriesConcatenator:
             nTR = Xz.shape[0]
             Xall[row_ptr:row_ptr+nTR, :] = Xz
             sid = f.stem.split("_")[0]
-            rows.append(dict(Subject=sid, start=row_ptr, end=row_ptr+nTR, nTR=nTR))
+            rows.append(dict(subject_id=sid, start=row_ptr, end=row_ptr+nTR, nTR=nTR))
             row_ptr += nTR
             log.info(f"concat {sid}", extra={"file": f.name, "sid": sid, "nTR": int(nTR), "parcels": int(n_parcels)})
 

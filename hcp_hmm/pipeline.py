@@ -465,6 +465,7 @@ class Pipeline:
                 surface_right=self.configs.paths.surface_right,
                 surface_left_inflated=self.configs.paths.surface_left_inflated,
                 surface_right_inflated=self.configs.paths.surface_right_inflated,
+                layout_centroid_mode=getattr(self.configs.summary, "layout_centroid_mode", "none"),
             )).run()
         except Exception as e:
             log.warning("summary_failed", extra={"err": str(e)})
@@ -478,7 +479,7 @@ class Pipeline:
             configure_logging(log_format, log_level)
         #the whole pipeline steps 
         ############# OVO DA NE PONAVLJA PARCELACIJU ####################
-        #self.parcellate_dtseries() #Uses Parcellator from the parcellation.py
+        self.parcellate_dtseries() #Uses Parcellator from the parcellation.py
         ############# UNCOMMENT AKO HOĆEŠ PARCELACIJU ###################
         self.concat_ptseries() #Uses PtSeriesConcatenator from ptseries.py
         self.fit_hmm() #Uses HMMRunner(HMMConfig) from hmm_fit.py 

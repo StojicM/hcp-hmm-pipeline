@@ -1,5 +1,5 @@
 paths:
-  raw_dtseries_dir: /run/media/mirex/Cruzer/hcp_results/
+  raw_dtseries_dir: /home/mirex/Science/hcp_subjects/
   atlas_dlabel: data/atlas/300Parcels_Yeo2011_7Networks.dlabel.nii
   ptseries_dir: data/derivatives/ptseries
   hmm_dir: data/derivatives/hmm
@@ -27,8 +27,8 @@ parcellate:
   suffix: Yeo300
   
 stats:
-  n_perm_rm: 100        # permutations for repeated-measures state stats
-  n_perm_between: 200   # permutations for global between-subject stats
+  n_perm_rm: 1000      # permutations for repeated-measures state stats
+  n_perm_between: 1000   # permutations for global between-subject stats
 
 group_design:
   contrast: sex          # sex, or intercept
@@ -48,3 +48,5 @@ palm:
 
 summary:
   build_summary: true
+  # Centroid overlay for parcel 2D maps: none | signed | abs | positive
+  layout_centroid_mode: signed

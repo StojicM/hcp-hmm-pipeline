@@ -160,3 +160,5 @@ class GroupDesignParams:
 class SummaryParams:
     """Toggle for building the final summary."""
     build_summary: bool = False
+    # Optional centroid overlay on parcel 2D plots: none | signed | abs | positive
+    layout_centroid_mode: str = "none"

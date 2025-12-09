@@ -26,6 +26,9 @@ from .logger import get_logger
 
 log = get_logger(__name__)
 
+YEO7_ORDER = ["Visual", "SomMot", "DorsAttn", "VentAttn", "Limbic", "Control", "Default", "Other"]
+LAYOUT_CENTROID_MODES = {"none", "signed", "abs", "positive"}
+
 
 def _read_labels(tsv: Path) -> List[str]:
     if not tsv.exists():
@@ -254,6 +257,7 @@ class SummaryConfig:
     surface_dir: Optional[Path] = None
     n_perm: int = 2000
     seed: int = 42
+    layout_centroid_mode: str = "none"  # none | signed | abs | positive
 
 
 @dataclass
@@ -265,6 +269,14 @@ class BrainSpaceContext:
     rh_n: int
     codes_lh: Optional[np.ndarray] = None
     codes_rh: Optional[np.ndarray] = None
+
+
+@dataclass
+class ParcelLayout2D:
+    coords_2d: np.ndarray
+    networks: List[str]
+    labels: List[str]
+    valid_mask: np.ndarray
 
 
 class SummaryBuilder:
@@ -476,18 +488,246 @@ class SummaryBuilder:
             if not isinstance(mapping, dict):
                 continue
             for struct, verts in mapping.items():
-                if verts.size == 0:
-                    continue
-                if "CORTEX_LEFT" in str(struct):
-                    tgt = lh_vals
-                elif "CORTEX_RIGHT" in str(struct):
-                    tgt = rh_vals
-                else:
-                    continue
-                valid = verts[(verts >= 0) & (verts < tgt.shape[0])]
-                if valid.size:
-                    tgt[valid] = val
+                    if verts.size == 0:
+                        continue
+                    if "CORTEX_LEFT" in str(struct):
+                        tgt = lh_vals
+                    elif "CORTEX_RIGHT" in str(struct):
+                        tgt = rh_vals
+                    else:
+                        continue
+                    valid = verts[(verts >= 0) & (verts < tgt.shape[0])]
+                    if valid.size:
+                        tgt[valid] = val
         return lh_vals, rh_vals
+
+    @staticmethod
+    def _network_palette() -> Dict[str, str]:
+        return {
+            "Visual": "#4C78A8",
+            "SomMot": "#F58518",
+            "DorsAttn": "#E45756",
+            "VentAttn": "#72B7B2",
+            "Limbic": "#54A24B",
+            "Control": "#B279A2",
+            "Default": "#FF9DA6",
+            "Other": "#999999",
+        }
+
+    @staticmethod
+    def _load_surface_coords(path: Path) -> np.ndarray:
+        img = nib.load(str(path))
+        try:
+            coords = img.agg_data("pointset")
+            if isinstance(coords, (list, tuple)):
+                coords = coords[0] if coords else None
+            if coords is not None:
+                arr = np.asarray(coords, dtype=np.float32)
+                if arr.ndim == 2 and arr.shape[1] == 3:
+                    return arr
+        except Exception:
+            pass
+        try:
+            darrays = getattr(img, "darrays", None)
+            if darrays and len(darrays) > 0:
+                coords = np.asarray(darrays[0].data, dtype=np.float32)
+                if coords.ndim == 2 and coords.shape[1] == 3:
+                    return coords
+        except Exception:
+            pass
+        raise ValueError(f"surface coords not found in {path}")
+
+    @staticmethod
+    def _embed_centroids_2d(centroids: np.ndarray, valid: np.ndarray) -> np.ndarray:
+        coords_2d = np.full((centroids.shape[0], 2), np.nan, dtype=np.float32)
+        if centroids.shape[0] == 0 or valid.sum() < 2:
+            return coords_2d
+        pts = centroids[valid] - centroids[valid].mean(axis=0)
+        try:
+            from sklearn.decomposition import PCA  # type: ignore
+
+            coords_valid = PCA(n_components=2).fit_transform(pts)
+        except Exception:
+            try:
+                _, _, vt = np.linalg.svd(pts, full_matrices=False)
+                coords_valid = pts @ vt[:2].T
+            except Exception:
+                return coords_2d
+        coords_2d[valid] = coords_valid.astype(np.float32, copy=False)
+        return coords_2d
+
+    @staticmethod
+    def _state_weighted_centroid(layout: ParcelLayout2D, values: np.ndarray, mode: str) -> Optional[np.ndarray]:
+        mode = (mode or "none").lower()
+        if mode not in LAYOUT_CENTROID_MODES or mode == "none":
+            return None
+        vals = np.asarray(values, dtype=np.float32).reshape(-1)
+        if vals.size != layout.coords_2d.shape[0]:
+            return None
+        coords = layout.coords_2d
+        mask = layout.valid_mask & np.isfinite(coords).all(axis=1) & np.isfinite(vals)
+        if not np.any(mask):
+            return None
+        vals_z = SummaryBuilder._zscore_vec(vals)
+        if mode == "signed":
+            w = vals_z
+            denom = np.sum(np.abs(w[mask]))
+        elif mode == "abs":
+            w = np.abs(vals_z)
+            denom = np.sum(w[mask])
+        else:  # positive
+            w = np.clip(vals_z, 0.0, None)
+            denom = np.sum(w[mask])
+        if denom == 0 or not np.isfinite(denom):
+            return None
+        num = np.sum((w[mask][:, None]) * coords[mask, :], axis=0)
+        ctr = num / denom
+        if not np.all(np.isfinite(ctr)):
+            return None
+        return ctr.astype(np.float32, copy=False)
+
+    def _compute_parcel_layout(self, labels: List[str]) -> Optional[ParcelLayout2D]:
+        if not self.cfg.atlas_dlabel:
+            return None
+        surface_paths = self._resolve_surface_paths()
+        if not surface_paths:
+            return None
+        try:
+            lh_xyz = self._load_surface_coords(surface_paths["lh"])
+            rh_xyz = self._load_surface_coords(surface_paths["rh"])
+        except Exception as e:
+            log.warning("summary_layout_surface_failed", extra={"err": str(e)})
+            return None
+        try:
+            img = nib.load(str(self.cfg.atlas_dlabel))
+            data = np.asarray(img.get_fdata()).reshape(-1).astype(int)
+            bm = img.header.get_axis(1)
+            lh_slice = None; rh_slice = None
+            for name, sl, _ in bm.iter_structures():
+                s = str(name)
+                if "CORTEX_LEFT" in s:
+                    lh_slice = sl
+                elif "CORTEX_RIGHT" in s:
+                    rh_slice = sl
+            if lh_slice is None or rh_slice is None:
+                return None
+            codes_lh = data[lh_slice]
+            codes_rh = data[rh_slice]
+        except Exception as e:
+            log.warning("summary_layout_dlabel_failed", extra={"err": str(e)})
+            return None
+
+        P = int(max(
+            np.max(codes_lh) if codes_lh.size else 0,
+            np.max(codes_rh) if codes_rh.size else 0,
+            len(labels),
+        ))
+        if P == 0:
+            return None
+
+        lbls_full = list(labels)
+        if len(lbls_full) < P:
+            lbls_full.extend([f"parcel_{i+1}" for i in range(len(lbls_full), P)])
+
+        centroids = np.full((P, 3), np.nan, dtype=np.float32)
+        nets: List[str] = []
+        for j in range(P):
+            lbl = j + 1
+            pieces = []
+            if codes_lh.size:
+                mask = codes_lh == lbl
+                if np.any(mask):
+                    pieces.append(lh_xyz[mask])
+            if codes_rh.size:
+                mask = codes_rh == lbl
+                if np.any(mask):
+                    pieces.append(rh_xyz[mask])
+            if pieces:
+                pts = np.vstack(pieces)
+                centroids[j, :] = np.nanmean(pts, axis=0, dtype=np.float32)
+            nets.append(_infer_network(lbls_full[j]))
+        valid = np.isfinite(centroids).all(axis=1)
+        coords_2d = self._embed_centroids_2d(centroids, valid)
+        return ParcelLayout2D(coords_2d=coords_2d, networks=nets, labels=lbls_full, valid_mask=valid)
+
+    def _plot_parcel_networks(self, layout: ParcelLayout2D, out_path: Path) -> bool:
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+        except Exception:
+            return False
+        coords = layout.coords_2d
+        mask = layout.valid_mask & np.isfinite(coords).all(axis=1)
+        if mask.sum() == 0:
+            return False
+        colors = self._network_palette()
+        nets = np.asarray(layout.networks)
+        fig, ax = plt.subplots(figsize=(6, 6))
+        for net in YEO7_ORDER:
+            idx = mask & (nets == net)
+            if not np.any(idx):
+                continue
+            ax.scatter(coords[idx, 0], coords[idx, 1], s=26, color=colors.get(net, "#999999"), alpha=0.8, label=net, linewidths=0)
+        ax.set_xticks([]); ax.set_yticks([])
+        ax.set_aspect("equal", "box")
+        ax.set_title("Parcel layout by Yeo-7 (PCA of centroids)")
+        ax.legend(frameon=False, ncol=2, fontsize=9, loc="upper right")
+        fig.tight_layout()
+        fig.savefig(out_path, dpi=150)
+        plt.close(fig)
+        return out_path.exists()
+
+    def _plot_parcel_values_2d(
+        self,
+        layout: ParcelLayout2D,
+        values: np.ndarray,
+        out_path: Path,
+        title: str = "",
+        centroid_2d: Optional[np.ndarray] = None,
+        centroid_label: str = "",
+    ) -> bool:
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+        except Exception:
+            return False
+        coords = layout.coords_2d
+        vals = np.asarray(values, dtype=np.float32).reshape(-1)
+        P = coords.shape[0]
+        if vals.size != P:
+            return False
+        mask = layout.valid_mask & np.isfinite(coords).all(axis=1) & np.isfinite(vals)
+        if mask.sum() == 0:
+            return False
+        vals_z = self._zscore_vec(vals)
+        vmax = float(np.nanmax(np.abs(vals_z[mask]))) if mask.any() else 1.0
+        if not np.isfinite(vmax) or vmax == 0.0:
+            vmax = 1.0
+        vmax = max(vmax, 1.0)
+        colors = self._network_palette()
+        nets = np.asarray(layout.networks)
+        fig, ax = plt.subplots(figsize=(6.4, 6.0))
+        for net in YEO7_ORDER:
+            idx = layout.valid_mask & (nets == net)
+            if not np.any(idx):
+                continue
+            ax.scatter(coords[idx, 0], coords[idx, 1], s=22, color=colors.get(net, "#999999"), alpha=0.25, linewidths=0)
+        sc = ax.scatter(coords[mask, 0], coords[mask, 1], c=vals_z[mask], cmap="RdBu_r", s=52, edgecolor="k", linewidth=0.35, vmin=-vmax, vmax=vmax)
+        cbar = fig.colorbar(sc, ax=ax, shrink=0.78)
+        cbar.set_label("z-scored weight", fontsize=9)
+        if centroid_2d is not None and centroid_2d.shape == (2,) and np.all(np.isfinite(centroid_2d)):
+            ax.scatter([centroid_2d[0]], [centroid_2d[1]], s=120, marker="*", color="#000000", edgecolor="white", linewidth=0.8, zorder=5)
+            if centroid_label:
+                ax.text(centroid_2d[0], centroid_2d[1], centroid_label, fontsize=9, fontweight="bold", ha="center", va="center", color="#ffffff", bbox=dict(boxstyle="round,pad=0.2", fc="black", ec="none", alpha=0.7))
+        ax.set_xticks([]); ax.set_yticks([])
+        ax.set_aspect("equal", "box")
+        ax.set_title(title if title else "State pattern on 2D parcel layout (z)")
+        fig.tight_layout()
+        fig.savefig(out_path, dpi=150)
+        plt.close(fig)
+        return out_path.exists()
 
     def _load_palm_state_arrays(self, group_dir: Path, state: int) -> Optional[Dict[str, Any]]:
         Ktag = f"{self.cfg.K}S"
@@ -728,6 +968,9 @@ class SummaryBuilder:
         # Write summaries under the analysis root (hmm_dir)
         out_dir = self.cfg.hmm_dir / "summary"
         out_dir.mkdir(parents=True, exist_ok=True)
+        layout_mode = str(getattr(self.cfg, "layout_centroid_mode", "none")).lower()
+        if layout_mode not in LAYOUT_CENTROID_MODES:
+            layout_mode = "none"
 
         # WHEN: temporal metrics per state
         metrics_csv = self.cfg.hmm_dir / "metrics" / f"metrics_state_{self.cfg.K}S.csv"
@@ -754,6 +997,8 @@ class SummaryBuilder:
 
         state_figs: Dict[int, Dict[str, Path | None]] = {}
         self._brainspace_render_all(group_dir, out_dir, state_figs, labels)
+        layout: ParcelLayout2D | None = None
+        layout_overview: Path | None = None
 
         # State mean patterns → network profiles + top parcels
         tops_out = None
@@ -765,7 +1010,7 @@ class SummaryBuilder:
                 _infer_network(labels[j]) if j < len(labels) else 'Other'
                 for j in range(P)
             ]
-            net_order = ["Visual", "SomMot", "DorsAttn", "VentAttn", "Limbic", "Control", "Default", "Other"]
+            net_order = list(YEO7_ORDER)
             net_to_idx = {n: i for i, n in enumerate(net_order)}
             # Build profiles: K × N
             N = len(net_order)
@@ -792,6 +1037,43 @@ class SummaryBuilder:
                     v = patterns[s, :]
                     outp = out_dir / f"fig_state{s}_brainspace_betas.png"
                     self._brainspace_render_values(ctx, s, v, outp, title="Model mean pattern (z-scored)")
+
+            # Build 2D parcel layout and render state maps on it
+            try:
+                layout = self._compute_parcel_layout(labels if labels else [f"parcel_{i+1}" for i in range(P)])
+            except Exception as e:
+                layout = None
+                log.warning("summary_layout_build_failed", extra={"err": str(e)})
+                if layout is not None:
+                    base_path = out_dir / "fig_parcel_layout_networks.png"
+                    try:
+                        if self._plot_parcel_networks(layout, base_path):
+                            layout_overview = base_path
+                    except Exception as e:
+                        log.warning("summary_layout_plot_failed", extra={"err": str(e)})
+                    for s in range(self.cfg.K):
+                        v = patterns[s, :]
+                        outp = out_dir / f"fig_state{s}_parcel2d.png"
+                        ctr = None
+                        try:
+                            ctr = self._state_weighted_centroid(layout, v, layout_mode)
+                        except Exception:
+                            ctr = None
+                        try:
+                            created = self._plot_parcel_values_2d(
+                                layout,
+                                v,
+                                outp,
+                                title=f"State {s}: mean pattern (z)",
+                                centroid_2d=ctr,
+                                centroid_label=("ctr" if ctr is not None else ""),
+                            )
+                        except Exception as e:
+                            log.warning("summary_layout_state_failed", extra={"state": int(s), "err": str(e)})
+                            created = False
+                        if created:
+                            state_figs.setdefault(s, {"net": None, "brain": None, "parcel": None})
+                        state_figs[s]["parcel"] = outp
 
             # Drop previous "top parcels" CSV and figures to simplify interpretation.
             for s in range(self.cfg.K):
@@ -867,7 +1149,7 @@ class SummaryBuilder:
                         fig.savefig(outp, dpi=150)
                         plt.close(fig)
                         # Merge with existing entry for this state if present
-                        state_figs.setdefault(s, {"net": None, "brain": None})
+                        state_figs.setdefault(s, {"net": None, "brain": None, "parcel": None})
                         state_figs[s]["net"] = outp
 
                 except Exception as e:
@@ -889,6 +1171,8 @@ class SummaryBuilder:
 
         # Optional visuals (bar charts) if matplotlib is available
         figures: List[Path] = []
+        if layout_overview:
+            figures.append(layout_overview)
         try:
             import matplotlib
             matplotlib.use("Agg")
@@ -1032,8 +1316,11 @@ class SummaryBuilder:
                     parts.append(f"<h3>State {s}</h3>")
                     net_p = entry.get("net")
                     brain_p = entry.get("brain")
+                    parcel_p = entry.get("parcel")
                     if net_p:
                         parts.append(f"<div><img src='{Path(net_p).name}' style='max-width:900px;'></div>")
+                    if parcel_p:
+                        parts.append(f"<div><img src='{Path(parcel_p).name}' style='max-width:900px;'></div>")
                     if brain_p:
                         parts.append(f"<div><img src='{Path(brain_p).name}' style='max-width:900px;'></div>")
                 # Enrichment

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 """
 QC reporting for HMM fits: fingerprints, posterior sharpness, FO summaries, FD correlations, HTML report.
-Replaces src/qc_hmm.py usage with an in-package implementation.
 """
 
 import glob
