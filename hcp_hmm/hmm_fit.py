@@ -21,6 +21,7 @@ import pandas #as pd
 from hmmlearn.hmm import GaussianHMM
 
 from .logger import get_logger
+from .hmm_jax import JAXGaussianHMM
 from .subjects import load_subject_covariates
 
 log = get_logger(__name__)
@@ -105,7 +106,8 @@ class HMMConfig:
     """Configuration for HMM fitting and outputs.
 
     - `in_dir` / `out_dir`: where to read `train_X.npy` + index and write outputs
-    - `K`, `cov`, `max_iter`, `tol`, `seed`: hmmlearn hyperparameters
+    - `K`, `cov`, `max_iter`, `tol`, `seed`: HMM hyperparameters
+    - `backend`: hmm implementation to use ("hmmlearn" | "jax")
     - `tr_sec`: TR in seconds (for converting TR counts to seconds in reports)
     - Atlas/surface paths kept for compatibility; rendering is disabled
     """
@@ -116,6 +118,7 @@ class HMMConfig:
     max_iter: int = 500
     tol: float = 1e-3
     seed: int = 42
+    backend: str = "hmmlearn"
     tr_sec: float = 0.72
     subjects_csv: Path | None = None
     # Legacy BrainSpace inputs (unused; kept to preserve config compatibility)
@@ -179,17 +182,52 @@ class HMMRunner:
         if ntr_key: ren[ntr_key] = "nTR"
         idx = idx.rename(columns=ren)
 
-        log.info("hmm_train_begin", extra={"K": self.cfg.K, "cov": self.cfg.cov, "seed": self.cfg.seed})
-        model = GaussianHMM(
-            n_components=self.cfg.K,
-            covariance_type=self.cfg.cov,
-            n_iter=self.cfg.max_iter,
-            tol=self.cfg.tol,
-            random_state=self.cfg.seed,
-            verbose=True,
-        )
+        backend = str(getattr(self.cfg, "backend", "hmmlearn")).lower()
+        cov_type = self.cfg.cov
+        log.info("hmm_train_begin", extra={"K": self.cfg.K, "cov": cov_type, "seed": self.cfg.seed, "backend": backend})
+        if backend == "hmmlearn":
+            model = GaussianHMM(
+                n_components=self.cfg.K,
+                covariance_type=cov_type,
+                n_iter=self.cfg.max_iter,
+                tol=self.cfg.tol,
+                random_state=self.cfg.seed,
+                verbose=True,
+            )
+        elif backend == "jax":
+            if cov_type not in ("diag", "tied"):
+                raise SystemExit(f"JAX backend supports cov in ['diag', 'tied']; got '{cov_type}'")
+            try:
+                model = JAXGaussianHMM(
+                    n_components=self.cfg.K,
+                    covariance_type=cov_type,
+                    n_iter=self.cfg.max_iter,
+                    tol=self.cfg.tol,
+                    random_state=self.cfg.seed,
+                    verbose=True,
+                )
+            except ImportError as e:
+                raise SystemExit(str(e))
+        else:
+            raise SystemExit(f"Unknown HMM backend '{backend}'. Use 'hmmlearn' or 'jax'.")
         model.fit(X, lengths)
         logL = model.score(X, lengths)
+
+        def _num_params(K: int, P: int, cov: str) -> int:
+            cov = cov.lower()
+            base = (K - 1) + (K * (K - 1)) + (K * P)  # start + trans + means
+            if cov == "diag":
+                return base + K * P
+            if cov == "full":
+                return base + int(K * P * (P + 1) / 2)
+            if cov == "tied":
+                return base + int(P * (P + 1) / 2)
+            return base
+
+        n_obs = int(X.shape[0])
+        k_params = _num_params(self.cfg.K, X.shape[1], cov_type)
+        aic = 2 * k_params - 2 * logL
+        bic = math.log(max(n_obs, 1)) * k_params - 2 * logL
 
         ## Make the output directory
         out = self.cfg.out_dir
@@ -208,11 +246,15 @@ class HMMRunner:
             "max_iter": self.cfg.max_iter,
             "tol": self.cfg.tol,
             "seed": self.cfg.seed,
+            "backend": backend,
             "TR_sec": self.cfg.tr_sec,
             "n_parcels": int(X.shape[1]),
             "n_timepoints_total": int(X.shape[0]),
             "n_subjects": int(len(idx)),
             "loglik": float(logL),
+            "n_params": int(k_params),
+            "AIC": float(aic),
+            "BIC": float(bic),
             "transmat": model.transmat_.tolist(),
             "startprob": model.startprob_.tolist(),
             "means_shape": list(model.means_.shape),

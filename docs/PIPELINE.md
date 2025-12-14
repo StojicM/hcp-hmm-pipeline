@@ -2,7 +2,7 @@
 
 High-level orchestrator that wires together the pipeline stages using typed configs.
 
-Constructed from `PipelineConfig` (see `hcp_hmm/config.py`), invoked via the CLI or programmatically.
+Constructed from `PipelineConfig` (see `hcp_hmm/pipeline.py`), invoked via the CLI or programmatically.
 
 **Class: Pipeline**
 - File: `hcp_hmm/pipeline.py`
@@ -24,6 +24,10 @@ Constructed from `PipelineConfig` (see `hcp_hmm/config.py`), invoked via the CLI
   - Inputs: `hmm_dir/train_X.npy`, `hmm_dir/subjects_index.csv`
   - Outputs: model files, per-subject states/probabilities, and metrics under `hmm_dir`
   - Implementation: constructs `HMMConfig` and calls `HMMRunner.fit_and_export()`
+
+- `run_model_selection()` / `model_selection()`
+  - Inputs: ptseries + concat outputs, `evaluation:` config in `pipeline.yaml`
+  - Outputs: `model_selection/report.html` plus per-run artifacts under `model_selection/runs/`
 
 - `qc()`
   - Inputs: HMM outputs (metrics, states), optional FD CSV
@@ -59,4 +63,3 @@ Notes
 - `hcp_hmm/hmm_fit.py` — HMM fitting and metrics
 - `hcp_hmm/state_maps.py` — betas estimation
 - `hcp_hmm/group_design.py`, `group_merge.py` — design/merge utilities
-

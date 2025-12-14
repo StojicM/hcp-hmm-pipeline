@@ -15,7 +15,8 @@ Top-level sections:
 
 - `hmm`
   - `K` — number of HMM states
-  - `cov` — covariance type (`diag` or `full`)
+  - `cov` — covariance type (`diag`, `tied`, or `full` [hmmlearn only])
+  - `backend` — `hmmlearn` (default) or `jax` (experimental; supports `diag`/`tied`)
   - `max_iter`, `tol`, `seed`, `tr_sec` — training hyperparameters
 
 - `parcellate`
@@ -35,5 +36,14 @@ Top-level sections:
 - `group_design`
   - `contrast` (e.g., `intercept`, `sex`), `demean` ([columns]), `include_fd` (bool), optional `stacking` and `subject_order_file`
 
-Loaded by: `hcp_hmm/config.py:PipelineConfig.from_yaml`.
+- `evaluation` (optional K/seed sweep)
+  - `enabled` — run the sweep when calling `hcp_hmm.cli model-select`
+  - `K_values` — list of candidate K values (defaults to `hmm.K` if omitted)
+  - `seeds` — list of RNG seeds for stability (defaults to `hmm.seed` if omitted)
+  - `out_dir` — where to write sweep outputs (defaults to `<paths.hmm_dir>/model_selection`)
+  - `junk` — thresholds for Stage 1 (FO/dwell/presence)
+  - `indecision` — thresholds for Stage 3 (posterior dominance/ambiguity)
+  - `clone` — thresholds for Stage 4 (mean-pattern correlation)
+  - `reliability` — Stage 5 run-splitting (e.g., `run_len_tr: 1200`, `n_runs: 4`)
 
+Loaded by: `hcp_hmm/pipeline.py:PipelineConfig.from_yaml`.

@@ -64,6 +64,7 @@ def _handle_fit(namespace: argparse.Namespace) -> int:
         max_iter=namespace.max_iter,
         tol=namespace.tol,
         seed=namespace.seed,
+        backend=namespace.backend,
         tr_sec=namespace.tr_sec,
         subjects_csv=Path(namespace.subjects_csv) if namespace.subjects_csv else None,
         atlas_dlabel=Path(namespace.atlas_dlabel) if getattr(namespace, "atlas_dlabel", None) else None,
@@ -237,12 +238,6 @@ def _handle_summary(namespace: argparse.Namespace) -> int:
         hmm_dir=hmm_dir,
         betas_dir=betas_dir,
         K=int(K),
-        atlas_dlabel=atlas_dlabel,
-        surface_dir=surface_dir,
-        surface_left=surface_left,
-        surface_right=surface_right,
-        surface_left_inflated=surface_left_inflated,
-        surface_right_inflated=surface_right_inflated,
     )
     outputs = SummaryBuilder(summary_config).run()
     print("[summary] Wrote:")
@@ -274,6 +269,13 @@ def _handle_run(namespace: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_model_select(namespace: argparse.Namespace) -> int:
+    """CLI handler: sweep K/seeds and write model-selection reports."""
+    config = PipelineConfig.from_yaml(Path(namespace.config))
+    Pipeline(config, force=namespace.force).run_model_selection()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Build the CLI, parse arguments, and dispatch to a subcommand."""
     parser = argparse.ArgumentParser(prog="hcp-hmm",
@@ -301,10 +303,11 @@ def main(argv: list[str] | None = None) -> int:
     p_fit.add_argument("--in-dir", required=True)
     p_fit.add_argument("--out-dir", required=True)
     p_fit.add_argument("--K", type=int, required=True)
-    p_fit.add_argument("--cov", choices=["full","diag"], default="diag")
+    p_fit.add_argument("--cov", choices=["full","diag","tied"], default="diag")
     p_fit.add_argument("--max-iter", type=int, default=500)
     p_fit.add_argument("--tol", type=float, default=1e-3)
     p_fit.add_argument("--seed", type=int, default=42)
+    p_fit.add_argument("--backend", choices=["hmmlearn","jax"], default="hmmlearn")
     p_fit.add_argument("--tr-sec", type=float, default=0.72)
     p_fit.add_argument("--subjects-csv", default=None,
                        help="Optional CSV with subject-level covariates (sex, age, etc.)")
@@ -420,6 +423,11 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--config", required=True, help="YAML with paths and parameters")
     p_run.add_argument("--force", action="store_true", help="recompute even if outputs exist")
     p_run.set_defaults(handler=_handle_run)
+
+    p_ms = subparser.add_parser("model-select", help="Sweep K/seed combinations and write model-selection report")
+    p_ms.add_argument("--config", required=True, help="YAML with paths + evaluation settings")
+    p_ms.add_argument("--force", action="store_true", help="recompute even if outputs exist")
+    p_ms.set_defaults(handler=_handle_model_select)
 
     namespace = parser.parse_args(argv)
     handler = getattr(namespace, "handler", None)

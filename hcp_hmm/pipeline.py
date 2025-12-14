@@ -58,6 +58,7 @@ class PipelineConfig:
     logging: Optional["LoggingParams"] = None
     group_design: Optional["GroupDesignParams"] = None
     summary: "SummaryParams" = field(default_factory=SummaryParams)
+    evaluation: Optional["EvaluationParams"] = None
 
     @staticmethod
     def from_yaml(path: Path) -> "PipelineConfig":
@@ -114,7 +115,45 @@ class PipelineConfig:
         else:
             summary = SummaryParams()
 
-        return PipelineConfig(paths=paths, hmm=hmm, parcellate=parc, palm=palm, stats=stats, logging=logging_params, group_design=group_design, summary=summary)
+        eval_cfg = data.get("evaluation")
+        evaluation = None
+        if isinstance(eval_cfg, dict):
+            ec = dict(eval_cfg)
+            out_dir = P(ec.get("out_dir")) if ec.get("out_dir") is not None else None
+            K_values = ec.get("K_values", [])
+            if isinstance(K_values, int):
+                K_values = [K_values]
+            seeds = ec.get("seeds", [])
+            if isinstance(seeds, int):
+                seeds = [seeds]
+            junk_cfg = ec.get("junk")
+            indecision_cfg = ec.get("indecision")
+            clone_cfg = ec.get("clone")
+            reliability_cfg = ec.get("reliability")
+            evaluation = EvaluationParams(
+                enabled=bool(ec.get("enabled", False)),
+                K_values=[int(v) for v in (K_values or [])],
+                seeds=[int(v) for v in (seeds or [])],
+                out_dir=out_dir,
+                junk=EvalJunkParams(**junk_cfg) if isinstance(junk_cfg, dict) else EvalJunkParams(),
+                indecision=EvalIndecisionParams(**indecision_cfg) if isinstance(indecision_cfg, dict) else EvalIndecisionParams(),
+                clone=EvalCloneParams(**clone_cfg) if isinstance(clone_cfg, dict) else EvalCloneParams(),
+                reliability=EvalReliabilityParams(**reliability_cfg) if isinstance(reliability_cfg, dict) else EvalReliabilityParams(),
+            )
+        elif isinstance(eval_cfg, bool):
+            evaluation = EvaluationParams(enabled=bool(eval_cfg))
+
+        return PipelineConfig(
+            paths=paths,
+            hmm=hmm,
+            parcellate=parc,
+            palm=palm,
+            stats=stats,
+            logging=logging_params,
+            group_design=group_design,
+            summary=summary,
+            evaluation=evaluation,
+        )
 
 
 @dataclass
@@ -171,6 +210,7 @@ class Pipeline:
             max_iter=self.configs.hmm.max_iter,
             tol=self.configs.hmm.tol,
             seed=self.configs.hmm.seed,
+            backend=getattr(self.configs.hmm, "backend", "hmmlearn"),
             tr_sec=self.configs.hmm.tr_sec,
             subjects_csv=self.configs.paths.subjects_csv,
             atlas_dlabel=self.configs.paths.parcel_labels_dlabel,
@@ -181,6 +221,37 @@ class Pipeline:
             surface_right_inflated=self.configs.paths.surface_right_inflated,
         )
         HMMRunner(Hconfigs).fit_and_export()
+
+    def model_selection(self):
+        """Sweep K/seed combinations and write model-selection reports (optional)."""
+        eval_cfg = getattr(self.configs, "evaluation", None)
+        if not eval_cfg or not getattr(eval_cfg, "enabled", False):
+            log.info("skip_model_selection", extra={"reason": "disabled"})
+            return
+
+        out_dir = getattr(eval_cfg, "out_dir", None) or (self.configs.paths.hmm_dir / "model_selection")
+        from .model_selection import ModelSelectionConfig, ModelSelectionRunner
+
+        ModelSelectionRunner(ModelSelectionConfig(
+            in_dir=self.configs.paths.hmm_dir,
+            out_dir=Path(out_dir),
+            hmm=self.configs.hmm,
+            evaluation=eval_cfg,
+            subjects_csv=self.configs.paths.subjects_csv,
+            atlas_dlabel=self.configs.paths.parcel_labels_dlabel,
+            surface_dir=self.configs.paths.surface_dir,
+            surface_left=self.configs.paths.surface_left,
+            surface_right=self.configs.paths.surface_right,
+            surface_left_inflated=self.configs.paths.surface_left_inflated,
+            surface_right_inflated=self.configs.paths.surface_right_inflated,
+            force=self.force,
+        )).run()
+
+    def run_model_selection(self):
+        """Run minimal preprocessing and then K/seed model selection."""
+        self.parcellate_dtseries()
+        self.concat_ptseries()
+        self.model_selection()
 
 
     def qc(self):
@@ -459,13 +530,6 @@ class Pipeline:
                 hmm_dir=self.configs.paths.hmm_dir,
                 betas_dir=self.configs.paths.betas_dir,
                 K=self.configs.hmm.K,
-                atlas_dlabel=self.configs.paths.parcel_labels_dlabel,
-                surface_dir=self.configs.paths.surface_dir,
-                surface_left=self.configs.paths.surface_left,
-                surface_right=self.configs.paths.surface_right,
-                surface_left_inflated=self.configs.paths.surface_left_inflated,
-                surface_right_inflated=self.configs.paths.surface_right_inflated,
-                layout_centroid_mode=getattr(self.configs.summary, "layout_centroid_mode", "none"),
             )).run()
         except Exception as e:
             log.warning("summary_failed", extra={"err": str(e)})

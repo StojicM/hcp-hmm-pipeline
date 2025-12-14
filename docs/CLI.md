@@ -63,3 +63,6 @@ Key commands
 - `run` — Execute the full pipeline using `pipeline.yaml`
   - Inputs: `--config`, optional `--force`
 
+- `model-select` — Sweep K/seed combinations and write model-selection reports
+  - Inputs: `--config` (with an `evaluation:` section), optional `--force`
+  - Outputs: `<evaluation.out_dir or paths.hmm_dir/model_selection>/report.html` (+ per-run artifacts under `runs/`)

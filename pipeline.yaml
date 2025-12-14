@@ -16,7 +16,12 @@ logging:
 
 hmm:
   K: 4
-  cov: diag
+  backend: jax # hmmlearn | jax (jax supports diag/tied; requires jax + jaxlib)
+  # diag = each parcel independent
+  # full = the richest possible model but resource (data and processing) expensive
+  # tied* = middle ground: forces all states to share the same covariance matrix, 
+  # while each keeps its own mean.
+  cov: tied # diag | full | tied; read docs **
   max_iter: 1000
   tol: 0.001
   seed: 42
@@ -27,12 +32,12 @@ parcellate:
   suffix: Yeo300
   
 stats:
-  n_perm_rm: 1000      # permutations for repeated-measures state stats
-  n_perm_between: 1000   # permutations for global between-subject stats
+  n_perm_rm: 100        # permutations for repeated-measures state stats
+  n_perm_between: 100   # permutations for global between-subject stats
 
 group_design:
   contrast: sex          # sex, or intercept
-  demean: ["fd"]         # head motion
+  demean: ["fd"]         # frame displacement, i.e. head motion
   include_fd: true
 
 palm:
@@ -50,3 +55,32 @@ summary:
   build_summary: true
   # Centroid overlay for parcel 2D maps: none | signed | abs | positive
   layout_centroid_mode: signed
+
+evaluation:
+  enabled: true
+  # Candidate K values for the sweep (omit to use hmm.K)
+  K_values: [4, 5, 6, 7, 8]
+  # Repeat fits across multiple seeds to assess stability (omit to use hmm.seed)
+  seeds: [42, 43, 44]
+  # Optional explicit output directory (defaults to <paths.hmm_dir>/model_selection)
+  # out_dir: data/derivatives/hmm/model_selection
+
+  # Stage 1: Junk-state detectors (heuristic thresholds)
+  junk:
+    fo_median_min: 0.01
+    dt_mean_min_tr: 2.0
+    presence_min: 0.5
+
+  # Stage 3: Indecision detectors (posterior probabilities)
+  indecision:
+    dominance_thr: 0.8
+    ambiguous_thr: 0.5
+
+  # Stage 4: Clone detectors (state mean-pattern similarity)
+  clone:
+    corr_thr: 0.9
+
+  # Stage 5: Reality check (split merged 4800TR into 4×1200TR)
+  reliability:
+    run_len_tr: 1200
+    n_runs: 4

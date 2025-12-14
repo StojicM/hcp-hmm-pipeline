@@ -47,6 +47,7 @@ class HMMParams:
     tol: float = 1e-3
     seed: int = 42
     tr_sec: float = 0.72
+    backend: str = "hmmlearn"  # hmmlearn | jax
 
 
 @dataclass
@@ -162,3 +163,53 @@ class SummaryParams:
     build_summary: bool = False
     # Optional centroid overlay on parcel 2D plots: none | signed | abs | positive
     layout_centroid_mode: str = "none"
+
+
+# ------------------------- Model Selection / Evaluation -------------------------
+
+
+@dataclass
+class EvalJunkParams:
+    """Heuristics for detecting overfit / 'junk' states."""
+
+    fo_median_min: float = 0.01
+    dt_mean_min_tr: float = 2.0
+    presence_min: float = 0.5
+
+
+@dataclass
+class EvalIndecisionParams:
+    """Heuristics based on posterior state probabilities."""
+
+    dominance_thr: float = 0.8
+    ambiguous_thr: float = 0.5
+
+
+@dataclass
+class EvalCloneParams:
+    """Heuristics for detecting redundant / cloned states."""
+
+    corr_thr: float = 0.9
+
+
+@dataclass
+class EvalReliabilityParams:
+    """Stage-5 test–retest reliability options (run-splitting)."""
+
+    run_len_tr: int = 1200
+    n_runs: int = 4
+
+
+@dataclass
+class EvaluationParams:
+    """Configuration for K/seed model selection sweeps."""
+
+    enabled: bool = False
+    K_values: list[int] = field(default_factory=list)
+    seeds: list[int] = field(default_factory=list)
+    out_dir: Optional[Path] = None
+
+    junk: EvalJunkParams = field(default_factory=EvalJunkParams)
+    indecision: EvalIndecisionParams = field(default_factory=EvalIndecisionParams)
+    clone: EvalCloneParams = field(default_factory=EvalCloneParams)
+    reliability: EvalReliabilityParams = field(default_factory=EvalReliabilityParams)
