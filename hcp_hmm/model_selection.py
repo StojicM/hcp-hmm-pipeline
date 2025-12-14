@@ -576,6 +576,35 @@ class ModelSelectionRunner:
             log.info("model_select_skip_fit", extra={"K": int(K), "seed": int(seed), "path": str(probe)})
             return
 
+        # If a previous run completed training but got interrupted during export,
+        # resume from the saved model instead of refitting.
+        model_path = out_dir / "model.joblib"
+        if model_path.exists() and not self.cfg.force:
+            try:
+                log.info("model_select_resume_export", extra={"K": int(K), "seed": int(seed), "path": str(model_path)})
+                cfg = _HMMConfig(
+                    in_dir=self.cfg.in_dir,
+                    out_dir=out_dir,
+                    K=int(K),
+                    cov=self.cfg.hmm.cov,
+                    max_iter=int(self.cfg.hmm.max_iter),
+                    tol=float(self.cfg.hmm.tol),
+                    seed=int(seed),
+                    backend=str(getattr(self.cfg.hmm, "backend", "hmmlearn")),
+                    tr_sec=float(self.cfg.hmm.tr_sec),
+                    subjects_csv=self.cfg.subjects_csv,
+                    atlas_dlabel=self.cfg.atlas_dlabel,
+                    surface_dir=self.cfg.surface_dir,
+                    surface_left=self.cfg.surface_left,
+                    surface_right=self.cfg.surface_right,
+                    surface_left_inflated=self.cfg.surface_left_inflated,
+                    surface_right_inflated=self.cfg.surface_right_inflated,
+                )
+                HMMRunner(cfg).export_only(model_path=model_path)
+                return
+            except Exception as e:
+                log.warning("model_select_resume_failed", extra={"K": int(K), "seed": int(seed), "err": str(e)})
+
         out_dir.mkdir(parents=True, exist_ok=True)
         cfg = _HMMConfig(
             in_dir=self.cfg.in_dir,

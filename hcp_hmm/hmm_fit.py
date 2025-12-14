@@ -11,6 +11,7 @@ computes a panel of global and statewise metrics per subject.
 
 import json
 import math
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -135,34 +136,29 @@ class HMMRunner:
     def __init__(self, cfg: HMMConfig):
         self.cfg = cfg
 
-    def _prepare_covariates(self) -> Tuple[List[str], Dict[str, Dict[str, object]], Dict[str, Dict[str, object]]]:
-        """Load optional subject covariates and expose lookups by Subject/UID."""
-        df = load_subject_covariates(getattr(self.cfg, "subjects_csv", None))
-        if df.empty:
-            return [], {}, {}
+    @staticmethod
+    def _num_params(K: int, P: int, cov: str) -> int:
+        cov = cov.lower()
+        base = (K - 1) + (K * (K - 1)) + (K * P)  # start + trans + means
+        if cov == "diag":
+            return base + K * P
+        if cov == "full":
+            return base + int(K * P * (P + 1) / 2)
+        if cov == "tied":
+            return base + int(P * (P + 1) / 2)
+        return base
 
-        covar_cols = [c for c in df.columns if c != "Subject"]
-        subj_lookup = df.set_index("Subject")[covar_cols].to_dict("index")
-        uid_lookup = {}
-        if "UID" in df.columns:
-            uid_lookup = df.groupby("UID")[covar_cols].first().to_dict("index")
-        return covar_cols, subj_lookup, uid_lookup
-
-    def fit_and_export(self):
-        """Fit the HMM and write model, per-subject states, and metrics CSVs."""
+    def _load_training_data(self) -> Tuple[numpy.ndarray, pandas.DataFrame, List[int]]:
+        """Load concatenated data and normalize the subject index schema."""
         # SPEED: memory-map large array to reduce RAM pressure; dtype left unchanged
         X = numpy.load(self.cfg.in_dir / "train_X.npy", mmap_mode="r")
         idx = pandas.read_csv(self.cfg.in_dir / "subjects_index.csv")
         # Normalize index columns to a standard schema
         cols = {c.lower(): c for c in idx.columns}
         sid_key = None
-        # for k in ("subject", "sid", "subject_id", "uid", "id"):
-        # for k in ("subject_id",""):
-        #     if "subject_id" in cols:
-        #         sid_key = cols[k]; break
 
         if "subject_id" in cols:
-            sid_key = "subject_id"; 
+            sid_key = "subject_id"
 
         if sid_key is None:
             raise SystemExit(f"subjects_index.csv missing subject column. Found: {list(idx.columns)}")
@@ -177,63 +173,38 @@ class HMMRunner:
             raise SystemExit("subjects_index.csv must have either nTR or start/end columns.")
         # Rename to canonical names for downstream code
         ren = {sid_key: "Subject"}
-        if start_key: ren[start_key] = "start"
-        if end_key: ren[end_key] = "end"
-        if ntr_key: ren[ntr_key] = "nTR"
+        if start_key:
+            ren[start_key] = "start"
+        if end_key:
+            ren[end_key] = "end"
+        if ntr_key:
+            ren[ntr_key] = "nTR"
         idx = idx.rename(columns=ren)
+        return X, idx, lengths
 
-        backend = str(getattr(self.cfg, "backend", "hmmlearn")).lower()
-        cov_type = self.cfg.cov
-        log.info("hmm_train_begin", extra={"K": self.cfg.K, "cov": cov_type, "seed": self.cfg.seed, "backend": backend})
-        if backend == "hmmlearn":
-            model = GaussianHMM(
-                n_components=self.cfg.K,
-                covariance_type=cov_type,
-                n_iter=self.cfg.max_iter,
-                tol=self.cfg.tol,
-                random_state=self.cfg.seed,
-                verbose=True,
-            )
-        elif backend == "jax":
-            if cov_type not in ("diag", "tied"):
-                raise SystemExit(f"JAX backend supports cov in ['diag', 'tied']; got '{cov_type}'")
-            try:
-                model = JAXGaussianHMM(
-                    n_components=self.cfg.K,
-                    covariance_type=cov_type,
-                    n_iter=self.cfg.max_iter,
-                    tol=self.cfg.tol,
-                    random_state=self.cfg.seed,
-                    verbose=True,
-                )
-            except ImportError as e:
-                raise SystemExit(str(e))
-        else:
-            raise SystemExit(f"Unknown HMM backend '{backend}'. Use 'hmmlearn' or 'jax'.")
-        model.fit(X, lengths)
-        logL = model.score(X, lengths)
-
-        def _num_params(K: int, P: int, cov: str) -> int:
-            cov = cov.lower()
-            base = (K - 1) + (K * (K - 1)) + (K * P)  # start + trans + means
-            if cov == "diag":
-                return base + K * P
-            if cov == "full":
-                return base + int(K * P * (P + 1) / 2)
-            if cov == "tied":
-                return base + int(P * (P + 1) / 2)
-            return base
-
+    def _export_from_fitted(
+        self,
+        model,
+        X: numpy.ndarray,
+        idx: pandas.DataFrame,
+        lengths: List[int],
+        backend: str,
+        cov_type: str,
+        logL: float,
+    ) -> None:
+        """Write model, per-subject states/probabilities, and metrics CSVs."""
         n_obs = int(X.shape[0])
-        k_params = _num_params(self.cfg.K, X.shape[1], cov_type)
+        k_params = self._num_params(self.cfg.K, X.shape[1], cov_type)
         aic = 2 * k_params - 2 * logL
         bic = math.log(max(n_obs, 1)) * k_params - 2 * logL
 
-        ## Make the output directory
+        # Make output directories
         out = self.cfg.out_dir
         out.mkdir(parents=True, exist_ok=True)
-        states_dir = out / "per_subject_states"; states_dir.mkdir(exist_ok=True)
-        metrics_dir = out / "metrics"; metrics_dir.mkdir(exist_ok=True)
+        states_dir = out / "per_subject_states"
+        states_dir.mkdir(exist_ok=True)
+        metrics_dir = out / "metrics"
+        metrics_dir.mkdir(exist_ok=True)
 
         # Save model and summaries
         Ktag = f"{self.cfg.K}S"
@@ -270,8 +241,13 @@ class HMMRunner:
         rows_state, rows_global, rows_trans = [], [], []
 
         # SPEED: predict once over all sequences, then slice by subject
+        log.info("hmm_decode_begin", extra={"K": int(self.cfg.K), "backend": backend})
+        t0 = time.perf_counter()
         states_all = model.predict(X, lengths=lengths).astype(int)
+        log.info("hmm_viterbi_done", extra={"elapsed_s": float(time.perf_counter() - t0), "T": int(states_all.shape[0])})
+        t1 = time.perf_counter()
         probs_all = model.predict_proba(X, lengths=lengths)
+        log.info("hmm_posteriors_done", extra={"elapsed_s": float(time.perf_counter() - t1), "shape": list(probs_all.shape)})
         offsets = numpy.cumsum([0] + lengths)
 
         covar_cols, covars_lookup, covars_uid_lookup = self._prepare_covariates()
@@ -446,3 +422,65 @@ class HMMRunner:
                 "sample": sample[:5]
             })
         log.info("hmm_outputs_written", extra={"out_dir": str(self.cfg.out_dir)})
+
+    def _prepare_covariates(self) -> Tuple[List[str], Dict[str, Dict[str, object]], Dict[str, Dict[str, object]]]:
+        """Load optional subject covariates and expose lookups by Subject/UID."""
+        df = load_subject_covariates(getattr(self.cfg, "subjects_csv", None))
+        if df.empty:
+            return [], {}, {}
+
+        covar_cols = [c for c in df.columns if c != "Subject"]
+        subj_lookup = df.set_index("Subject")[covar_cols].to_dict("index")
+        uid_lookup = {}
+        if "UID" in df.columns:
+            uid_lookup = df.groupby("UID")[covar_cols].first().to_dict("index")
+        return covar_cols, subj_lookup, uid_lookup
+
+    def fit_and_export(self):
+        """Fit the HMM and write model, per-subject states, and metrics CSVs."""
+        X, idx, lengths = self._load_training_data()
+
+        backend = str(getattr(self.cfg, "backend", "hmmlearn")).lower()
+        cov_type = self.cfg.cov
+        log.info("hmm_train_begin", extra={"K": self.cfg.K, "cov": cov_type, "seed": self.cfg.seed, "backend": backend})
+        if backend == "hmmlearn":
+            model = GaussianHMM(
+                n_components=self.cfg.K,
+                covariance_type=cov_type,
+                n_iter=self.cfg.max_iter,
+                tol=self.cfg.tol,
+                random_state=self.cfg.seed,
+                verbose=True,
+            )
+        elif backend == "jax":
+            if cov_type not in ("diag", "tied"):
+                raise SystemExit(f"JAX backend supports cov in ['diag', 'tied']; got '{cov_type}'")
+            try:
+                model = JAXGaussianHMM(
+                    n_components=self.cfg.K,
+                    covariance_type=cov_type,
+                    n_iter=self.cfg.max_iter,
+                    tol=self.cfg.tol,
+                    random_state=self.cfg.seed,
+                    verbose=True,
+                )
+            except ImportError as e:
+                raise SystemExit(str(e))
+        else:
+            raise SystemExit(f"Unknown HMM backend '{backend}'. Use 'hmmlearn' or 'jax'.")
+        model.fit(X, lengths)
+        logL = model.score(X, lengths)
+        self._export_from_fitted(model, X, idx, lengths, backend, cov_type, float(logL))
+
+    def export_only(self, model_path: Optional[Path] = None) -> None:
+        """Export states and metrics from an already fitted model on disk."""
+        X, idx, lengths = self._load_training_data()
+        backend = str(getattr(self.cfg, "backend", "hmmlearn")).lower()
+        cov_type = self.cfg.cov
+        path = Path(model_path) if model_path is not None else (self.cfg.out_dir / "model.joblib")
+        if not path.exists():
+            raise FileNotFoundError(path)
+        log.info("hmm_export_only_begin", extra={"K": int(self.cfg.K), "path": str(path), "backend": backend})
+        model = joblib.load(path)
+        logL = model.score(X, lengths)
+        self._export_from_fitted(model, X, idx, lengths, backend, cov_type, float(logL))

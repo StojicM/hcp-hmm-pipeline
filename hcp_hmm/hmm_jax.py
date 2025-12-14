@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 import os
+import time
 import logging
 from dataclasses import dataclass
 from typing import List, Sequence, Tuple
@@ -215,26 +216,37 @@ def _viterbi(
     log_likelihood: jnp.ndarray,
     lengths: Sequence[int],
 ) -> np.ndarray:
-    _require_jax()
-    K = log_startprob.shape[0]
-    seqs = _split_sequences(np.asarray(log_likelihood), lengths)
-    states: List[np.ndarray] = []
-    for ll in seqs:
-        llj = jnp.asarray(ll)
-        T = llj.shape[0]
-        delta = log_startprob + llj[0]
-        psi = jnp.zeros((T, K), dtype=jnp.int32)
-        for t in range(1, T):
-            scores = delta[:, None] + log_transmat
-            psi = psi.at[t].set(jnp.argmax(scores, axis=0))
-            delta = jnp.max(scores, axis=0) + llj[t]
-        # Backtrace
-        st = [int(jnp.argmax(delta))]
-        for t in range(T - 1, 0, -1):
-            st.append(int(psi[t, st[-1]]))
-        st = st[::-1]
-        states.append(np.asarray(st, dtype=np.int64))
-    return np.concatenate(states, axis=0) if states else np.asarray([], dtype=np.int64)
+    # NOTE: A pure-JAX per-timestep Viterbi loop is extremely slow without JIT.
+    # We compute emission log-likelihoods in JAX, then run the dynamic program
+    # in NumPy (fast for small K; avoids per-op dispatch overhead).
+    K = int(log_startprob.shape[0])
+    log_pi = np.asarray(log_startprob, dtype=np.float64).reshape(-1)
+    log_A = np.asarray(log_transmat, dtype=np.float64)
+    ll = np.asarray(log_likelihood, dtype=np.float64)
+    lengths = [int(L) for L in lengths]
+    if ll.ndim != 2 or ll.shape[1] != K:
+        raise ValueError(f"Expected log_likelihood shape (T,K={K}); got {ll.shape}")
+
+    out = np.empty((ll.shape[0],), dtype=np.int64)
+    off = 0
+    for L in lengths:
+        if L <= 0:
+            continue
+        seg = ll[off:off + L, :]  # L×K
+        delta = log_pi + seg[0]
+        psi = np.empty((L, K), dtype=np.int32)
+        psi[0, :] = 0
+        for t in range(1, L):
+            scores = delta[:, None] + log_A  # K×K
+            psi[t, :] = np.argmax(scores, axis=0).astype(np.int32, copy=False)
+            delta = np.max(scores, axis=0) + seg[t]
+        st = np.empty((L,), dtype=np.int64)
+        st[-1] = int(np.argmax(delta))
+        for t in range(L - 1, 0, -1):
+            st[t - 1] = int(psi[t, st[t]])
+        out[off:off + L] = st
+        off += L
+    return out[:off]
 
 
 @dataclass
@@ -246,6 +258,11 @@ class JAXGaussianHMM:
     random_state: int | None = None
     verbose: bool = False
     min_covar: float = 1e-3
+    # Internal: float32 can cause a small "jitter floor" in total log-likelihood.
+    # This factor inflates the effective tolerance based on logprob magnitude
+    # to prevent extremely long tails when `tol` is tiny (e.g. 1e-3) but the
+    # numerics cannot reliably resolve deltas that small.
+    tol_floor_factor: float = 0.1
 
     def __post_init__(self):
         _require_jax()
@@ -306,16 +323,51 @@ class JAXGaussianHMM:
         lengths = [int(l) for l in lengths]
         self._init_params(X, lengths)
         K = self.n_components
-        prev_logprob = -np.inf
+        prev_logprob = float("nan")
+        fit_t0 = time.perf_counter()
+        n_obs = int(X.shape[0])
+        n_seq = int(len(lengths))
+        n_feat = int(X.shape[1]) if X.ndim == 2 else 0
+        tol = float(self.tol)
+        if math.isfinite(tol) and tol > 0:
+            tol_decimals = int(max(0.0, math.ceil(-math.log10(tol))))
+            delta_decimals = min(12, int(tol_decimals + 1))
+        else:
+            delta_decimals = 4
         if self.verbose:
-            log.info("[JAX-HMM] begin_fit", extra={"K": int(K), "cov": self.covariance_type, "iter": int(self.n_iter)})
+            seed_disp = int(self.random_state) if self.random_state is not None else "NA"
+            log.info(
+                "[JAX-HMM] begin_fit K=%d seed=%s cov=%s n_iter=%d tol=%g n_seq=%d",
+                int(K),
+                seed_disp,
+                str(self.covariance_type),
+                int(self.n_iter),
+                float(self.tol),
+                int(n_seq),
+                extra={
+                    "K": int(K),
+                    "seed": seed_disp if seed_disp != "NA" else None,
+                    "cov": str(self.covariance_type),
+                    "iter": int(self.n_iter),
+                    "tol": float(self.tol),
+                    "n_seq": int(n_seq),
+                    "n_obs": int(n_obs),
+                    "n_feat": int(n_feat),
+                },
+            )
         for it in range(self.n_iter):
+            iter_t0 = time.perf_counter()
             X_pad, mask = _pad_sequences(X, lengths)
             log_start = jnp.log(jnp.asarray(self.startprob_))
             log_trans = jnp.log(jnp.asarray(self.transmat_))
             log_lik_pad = self._log_prob_padded(X_pad, mask)
             gamma_pad, xi_sum, log_c = _e_step_padded(log_start, log_trans, log_lik_pad, jnp.asarray(mask))
-            logprob = float(np.sum(np.asarray(log_c)))
+            # IMPORTANT: accumulate in float64 on host for a stable delta signal.
+            # NumPy sums float32 in float32 by default, which can quantize total logprob
+            # for large datasets and make deltas appear as ...000 or jump to 0 early.
+            log_c_np = np.asarray(log_c)
+            logprob = float(np.sum(log_c_np, dtype=np.float64))
+            delta = (logprob - prev_logprob) if math.isfinite(prev_logprob) else None
             gamma_np = np.asarray(gamma_pad)
             xi_np = np.asarray(xi_sum)
 
@@ -362,17 +414,71 @@ class JAXGaussianHMM:
                 self.covars_ = cov
 
             if self.verbose:
+                iter_s = float(time.perf_counter() - iter_t0)
+                elapsed_s = float(time.perf_counter() - fit_t0)
+                delta_str = f"{delta:+.{delta_decimals}f}" if delta is not None else "NA"
                 log.info(
-                    "[JAX-HMM] iter",
+                    "[JAX-HMM] iter %d/%d logprob=%.0f delta=%s iter_s=%.1f elapsed_s=%.1f",
+                    int(it + 1),
+                    int(self.n_iter),
+                    float(logprob),
+                    delta_str,
+                    iter_s,
+                    elapsed_s,
                     extra={
                         "iter": int(it + 1),
                         "logprob": float(logprob),
-                        "delta": float(logprob - prev_logprob),
+                        "delta": float(delta) if delta is not None else None,
+                        "iter_s": iter_s,
+                        "elapsed_s": elapsed_s,
                     },
                 )
-            if it > 0 and abs(logprob - prev_logprob) < self.tol:
+            # hmmlearn uses `delta < tol` on the total log-likelihood.
+            # With float32 JAX numerics, the total log-likelihood can "jitter" by
+            # ~O(1) even after practical convergence. To keep `pipeline.yaml` tol
+            # values usable across backends, apply a small tolerance floor that
+            # scales with logprob magnitude when running in float32.
+            tol_eff = float(self.tol)
+            try:
+                eps = float(np.finfo(log_c_np.dtype).eps)
+            except Exception:
+                eps = float(np.finfo(np.float32).eps)
+            tol_floor = float(self.tol_floor_factor) * eps * float(abs(logprob))
+            if tol_floor > tol_eff:
+                tol_eff = tol_floor
+
+            if it > 0 and delta is not None and abs(delta) < tol_eff:
+                if self.verbose:
+                    abs_delta_str = f"{abs(delta):.{delta_decimals}f}"
+                    log.info(
+                        "[JAX-HMM] converged at iter %d (|delta|=%s < tol_eff=%g, user_tol=%g)",
+                        int(it + 1),
+                        abs_delta_str,
+                        float(tol_eff),
+                        float(tol),
+                        extra={
+                            "iter": int(it + 1),
+                            "logprob": float(logprob),
+                            "delta": float(delta),
+                            "tol_eff": float(tol_eff),
+                            "tol": float(tol),
+                            "elapsed_s": float(time.perf_counter() - fit_t0),
+                        },
+                    )
                 break
             prev_logprob = logprob
+        if self.verbose:
+            log.info(
+                "[JAX-HMM] end_fit iters=%d logprob=%.0f elapsed_s=%.1f",
+                int(it + 1),
+                float(logprob),
+                float(time.perf_counter() - fit_t0),
+                extra={
+                    "iters": int(it + 1),
+                    "logprob": float(logprob),
+                    "elapsed_s": float(time.perf_counter() - fit_t0),
+                },
+            )
         return self
 
     def score(self, X: np.ndarray, lengths: Sequence[int]) -> float:
@@ -381,7 +487,7 @@ class JAXGaussianHMM:
         log_trans = jnp.log(jnp.asarray(self.transmat_))
         log_lik_pad = self._log_prob_padded(X_pad, mask)
         _, _, log_c = _e_step_padded(log_start, log_trans, log_lik_pad, jnp.asarray(mask))
-        return float(np.sum(np.asarray(log_c)))
+        return float(np.sum(np.asarray(log_c), dtype=np.float64))
 
     def predict_proba(self, X: np.ndarray, lengths: Sequence[int]) -> np.ndarray:
         X_pad, mask = _pad_sequences(np.asarray(X, dtype=np.float64), lengths)
