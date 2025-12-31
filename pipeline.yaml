@@ -56,7 +56,7 @@ palm:
 evaluation:
   enabled: true
   # Candidate K values for the sweep (omit to use hmm.K)
-  K_values: [2, 3, 4, 5, 6, 7]
+  K_values: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
   # Repeat fits across multiple seeds to assess stability (omit to use hmm.seed)
   seeds: [19, 5, 91, 63, 81, 51, 3, 99, 18, 47]
   # Optional explicit output directory (defaults to <paths.hmm_dir>/model_selection)

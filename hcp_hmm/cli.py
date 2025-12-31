@@ -87,13 +87,6 @@ def _handle_state_maps(namespace: argparse.Namespace) -> int:
         K=int(namespace.K),
         chunk=int(namespace.chunk),
         rcond=float(namespace.rcond),
-        render_brainspace=bool(getattr(namespace, "render_brainspace", False)),
-        atlas_dlabel=Path(namespace.atlas_dlabel) if getattr(namespace, "atlas_dlabel", None) else None,
-        surface_dir=Path(namespace.surface_dir) if getattr(namespace, "surface_dir", None) else None,
-        surface_left=Path(namespace.surface_left) if getattr(namespace, "surface_left", None) else None,
-        surface_right=Path(namespace.surface_right) if getattr(namespace, "surface_right", None) else None,
-        surface_left_inflated=Path(namespace.surface_left_inflated) if getattr(namespace, "surface_left_inflated", None) else None,
-        surface_right_inflated=Path(namespace.surface_right_inflated) if getattr(namespace, "surface_right_inflated", None) else None,
     )
     StateMapEstimator(config).run()
     return 0
@@ -272,15 +265,6 @@ def main(argv: list[str] | None = None) -> int:
     p_maps.add_argument("--K", type=int, required=True)
     p_maps.add_argument("--chunk", type=int, default=60000)
     p_maps.add_argument("--rcond", type=float, default=1e-6)
-    p_maps.add_argument("--render-brainspace", action="store_true",
-                        help="render per-subject BrainSpace figures (off by default)")
-# Optional rendering
-    p_maps.add_argument("--atlas-dlabel", default=None)
-    p_maps.add_argument("--surface-dir", default=None)
-    p_maps.add_argument("--surface-left", default=None)
-    p_maps.add_argument("--surface-right", default=None)
-    p_maps.add_argument("--surface-left-inflated", default=None)
-    p_maps.add_argument("--surface-right-inflated", default=None)
     p_maps.set_defaults(handler=_handle_state_maps)
 #z-score
     p_z = subparser.add_parser("zscore", help="Z-score β maps and export pscalars")

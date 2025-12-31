@@ -41,7 +41,6 @@ Metrics (per subject)
 
 Notes
 - The training array is memory-mapped during fit to reduce RAM pressure.
-- BrainSpace rendering of state betas has been disabled; only numeric outputs are produced.
 - Backend: `hmm.backend` chooses `dynamax_arhmm` or `dynamax_slds` (requires `dynamax` + `jax/jaxlib`). State means/covars are estimated from posteriors and AIC/BIC are omitted.
 
 Interpreting entropy metrics

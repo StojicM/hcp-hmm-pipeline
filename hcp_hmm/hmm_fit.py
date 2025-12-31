@@ -477,7 +477,6 @@ class HMMConfig:
     ar_order: int = 1
     slds_latent_dim: int = 4
     subjects_csv: Path | None = None
-    # Legacy BrainSpace inputs (unused; kept to preserve config compatibility)
     atlas_dlabel: Optional[Path] = None
     surface_dir: Optional[Path] = None
     surface_left: Optional[Path] = None

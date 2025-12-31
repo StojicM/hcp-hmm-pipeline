@@ -277,13 +277,6 @@ class Pipeline:
             states_dir=self.configs.paths.hmm_dir / "per_subject_states",
             out_dir=out_dir,
             K=self.configs.hmm.K,
-            render_brainspace=False,
-            atlas_dlabel=self.configs.paths.parcel_labels_dlabel,
-            surface_dir=self.configs.paths.surface_dir,
-            surface_left=self.configs.paths.surface_left,
-            surface_right=self.configs.paths.surface_right,
-            surface_left_inflated=self.configs.paths.surface_left_inflated,
-            surface_right_inflated=self.configs.paths.surface_right_inflated,
         )
         StateMapEstimator(configs).run()
 
