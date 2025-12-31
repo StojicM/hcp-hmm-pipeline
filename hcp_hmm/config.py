@@ -47,7 +47,9 @@ class HMMParams:
     tol: float = 1e-3
     seed: int = 42
     tr_sec: float = 0.72
-    backend: str = "hmmlearn"  # hmmlearn | jax
+    backend: str = "dynamax_arhmm"  # dynamax_arhmm | dynamax_slds
+    ar_order: int = 1
+    slds_latent_dim: int = 4
 
 
 @dataclass
@@ -155,14 +157,6 @@ class GroupDesignParams:
     include_fd: Optional[bool] = None
     stacking: str = "subject-major"
     subject_order_file: Optional[Path] = None
-
-
-@dataclass
-class SummaryParams:
-    """Toggle for building the final summary."""
-    build_summary: bool = False
-    # Optional centroid overlay on parcel 2D plots: none | signed | abs | positive
-    layout_centroid_mode: str = "none"
 
 
 # ------------------------- Model Selection / Evaluation -------------------------

@@ -15,9 +15,11 @@ Top-level sections:
 
 - `hmm`
   - `K` — number of HMM states
-  - `cov` — covariance type (`diag`, `tied`, or `full` [hmmlearn only])
-  - `backend` — `hmmlearn` (default) or `jax` (experimental; supports `diag`/`tied`)
+  - `cov` — covariance type (`diag`, `tied`, or `full`)
+  - `backend` — `dynamax_arhmm` (default) or `dynamax_slds`
   - `max_iter`, `tol`, `seed`, `tr_sec` — training hyperparameters
+  - `ar_order` — AR lag order for `dynamax_arhmm`
+  - `slds_latent_dim` — latent dimension for `dynamax_slds`
 
 - `parcellate`
   - `method` — aggregation inside parcels (e.g., `MEAN`)
@@ -37,7 +39,7 @@ Top-level sections:
   - `contrast` (e.g., `intercept`, `sex`), `demean` ([columns]), `include_fd` (bool), optional `stacking` and `subject_order_file`
 
 - `evaluation` (optional K/seed sweep)
-  - `enabled` — run the sweep when calling `hcp_hmm.cli model-select`
+  - `enabled` — run the sweep when calling `hcp_hmm.cli run` or `hcp_hmm.cli model-select`
   - `K_values` — list of candidate K values (defaults to `hmm.K` if omitted)
   - `seeds` — list of RNG seeds for stability (defaults to `hmm.seed` if omitted)
   - `out_dir` — where to write sweep outputs (defaults to `<paths.hmm_dir>/model_selection`)

@@ -16,7 +16,9 @@ logging:
 
 hmm:
   K: 4
-  backend: jax # hmmlearn | jax (jax supports diag/tied; requires jax + jaxlib)
+  backend: dynamax_arhmm # dynamax_arhmm | dynamax_slds
+  ar_order: 1 # AR lag order for dynamax_arhmm
+  slds_latent_dim: 4 # latent dimension for dynamax_slds
   # diag = each parcel independent
   # full = the richest possible model but resource (data and processing) expensive
   # tied* = middle ground: forces all states to share the same covariance matrix, 
@@ -28,7 +30,7 @@ hmm:
   tr_sec: 0.72
 
 parcellate:
-  method: MEAN
+  method: MEAN 
   suffix: Yeo300
   
 stats:
@@ -51,17 +53,12 @@ palm:
   ise: true #  Keep ise: true for one-sample (intercept) tests. If you later switch to a between-group contrast (e.g., sex), turn ise off (permutations are appropriate there).
   use_zscored: false
 
-summary:
-  build_summary: true
-  # Centroid overlay for parcel 2D maps: none | signed | abs | positive
-  layout_centroid_mode: signed
-
 evaluation:
   enabled: true
   # Candidate K values for the sweep (omit to use hmm.K)
-  K_values: [2, 3, 4, 5, 6, 7, 8, 9, 10]
+  K_values: [2, 3, 4, 5, 6, 7]
   # Repeat fits across multiple seeds to assess stability (omit to use hmm.seed)
-  seeds: [19, 5, 91]
+  seeds: [19, 5, 91, 63, 81, 51, 3, 99, 18, 47]
   # Optional explicit output directory (defaults to <paths.hmm_dir>/model_selection)
   # out_dir: data/derivatives/hmm/model_selection
 

@@ -52,16 +52,9 @@ Key commands
   - Inputs: `--group-dir` with design files and stacks, `--K`, `--n-perm`
   - Outputs: PALM result files per state
 
-- `summary` — Build summary figures/tables
-  - Inputs: `--config` (optional to fill defaults), `--hmm-dir`, `--betas-dir`, `--K`
-  - Outputs: figures/tables in summary locations
-
-- `useful-states` — Summarise states passing thresholds
-  - Inputs: metrics/state CSV, rm stats CSV, PALM outputs dir, `--K`
-  - Outputs: CSV (+ optional JSON)
-
 - `run` — Execute the full pipeline using `pipeline.yaml`
   - Inputs: `--config`, optional `--force`
+  - Notes: runs model selection when `evaluation.enabled` is true
 
 - `model-select` — Sweep K/seed combinations and write model-selection reports
   - Inputs: `--config` (with an `evaluation:` section), optional `--force`

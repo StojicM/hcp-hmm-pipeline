@@ -1,6 +1,6 @@
 ## hcp_hmm/hmm_fit.py
 
-Fits a `GaussianHMM` (hmmlearn) on concatenated parcel time series and exports per-subject state sequences, probabilities, and metrics.
+Fits a Dynamax HMM backend (ARHMM or SLDS) on concatenated parcel time series and exports per-subject state sequences, probabilities, and metrics.
 
 Inputs
 - `in_dir/train_X.npy` — stacked time × parcel array
@@ -15,7 +15,7 @@ Subject index schema
 
 Outputs (under `out_dir`)
 - `model.joblib`, `hmm_model_{K}S.pkl` — the fitted HMM
-- `summary.json` — training summary (loglik, AIC, BIC, param counts, shapes)
+- `summary.json` — training summary (loglik, param counts, shapes; AIC/BIC omitted for dynamax)
 - `state_transition_matrix_{K}S.txt` — K×K transition probabilities
 - `state_mean_patterns_{K}S.csv` — K×P state means
 - `per_subject_states/` — per-subject state vectors and probabilities
@@ -42,7 +42,7 @@ Metrics (per subject)
 Notes
 - The training array is memory-mapped during fit to reduce RAM pressure.
 - BrainSpace rendering of state betas has been disabled; only numeric outputs are produced.
-- Backend: `hmm.backend` chooses `hmmlearn` (default) or an experimental JAX EM (`cov`=`diag`/`tied`, requires `jax`+`jaxlib`).
+- Backend: `hmm.backend` chooses `dynamax_arhmm` or `dynamax_slds` (requires `dynamax` + `jax/jaxlib`). State means/covars are estimated from posteriors and AIC/BIC are omitted.
 
 Interpreting entropy metrics
 - `occ_entropy_bits` (occupancy entropy): Shannon entropy of the stationary distribution `π` implied by `P`. Higher values indicate more uniform long-run occupancy across states; lower values indicate that the chain concentrates on a few states.

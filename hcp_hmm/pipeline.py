@@ -32,8 +32,6 @@ from .palm import PalmConfig, PalmRunner
 from .qc import QCConfig, QCReporter
 from .state_parcel import ParcellateStatesConfig, StateParcellator
 from .parcel_stats import ParcelStatsConfig, ParcelStatsRunner
-from .summary import SummaryConfig, SummaryBuilder
-from .useful_states import UsefulStatesConfig, UsefulStatesAnalyzer
 
 #dodao:
 import yaml
@@ -57,7 +55,6 @@ class PipelineConfig:
     stats: Optional["StatsParams"] = None
     logging: Optional["LoggingParams"] = None
     group_design: Optional["GroupDesignParams"] = None
-    summary: "SummaryParams" = field(default_factory=SummaryParams)
     evaluation: Optional["EvaluationParams"] = None
 
     @staticmethod
@@ -107,14 +104,6 @@ class PipelineConfig:
             group_design = GroupDesignParams(**gd_cfg)
         else:
             group_design = None
-        summary_cfg = data.get("summary")
-        if isinstance(summary_cfg, dict):
-            summary = SummaryParams(**summary_cfg)
-        elif isinstance(summary_cfg, bool):
-            summary = SummaryParams(build_summary=summary_cfg)
-        else:
-            summary = SummaryParams()
-
         eval_cfg = data.get("evaluation")
         evaluation = None
         if isinstance(eval_cfg, dict):
@@ -151,7 +140,6 @@ class PipelineConfig:
             stats=stats,
             logging=logging_params,
             group_design=group_design,
-            summary=summary,
             evaluation=evaluation,
         )
 
@@ -210,8 +198,10 @@ class Pipeline:
             max_iter=self.configs.hmm.max_iter,
             tol=self.configs.hmm.tol,
             seed=self.configs.hmm.seed,
-            backend=getattr(self.configs.hmm, "backend", "hmmlearn"),
+            backend=getattr(self.configs.hmm, "backend", "dynamax_arhmm"),
             tr_sec=self.configs.hmm.tr_sec,
+            ar_order=getattr(self.configs.hmm, "ar_order", 1),
+            slds_latent_dim=getattr(self.configs.hmm, "slds_latent_dim", 4),
             subjects_csv=self.configs.paths.subjects_csv,
             atlas_dlabel=self.configs.paths.parcel_labels_dlabel,
             surface_dir=self.configs.paths.surface_dir,
@@ -489,51 +479,6 @@ class Pipeline:
         if not ran_any and not self.force:
             log.info("skip_palm", extra={"reason": "all state analyses already completed", "dir": str(palm_dir)})
 
-    def useful_states_summary(self):
-        """Summarise states that pass both temporal and PALM-based filters."""
-        Ktag = f"{self.configs.hmm.K}S"
-        mdir = self.configs.paths.hmm_dir / "metrics"
-        metrics_state = mdir / f"metrics_state_{Ktag}.csv"
-        stats_rm = mdir / f"stats_state_{self.configs.hmm.K}S_rm.csv"
-        palm_dir = self.configs.paths.betas_dir / "group" / "palm"
-        out_csv = mdir / f"useful_states_{Ktag}.csv"
-        out_json = mdir / f"useful_states_{Ktag}.json"
-
-        if not metrics_state.exists():
-            log.info("skip_useful_states", extra={"reason": "metrics_state_missing", "path": str(metrics_state)})
-            return
-        if not stats_rm.exists():
-            log.info("skip_useful_states", extra={"reason": "stats_rm_missing", "path": str(stats_rm)})
-            return
-        if not palm_dir.exists():
-            log.info("skip_useful_states", extra={"reason": "palm_dir_missing", "path": str(palm_dir)})
-            return
-
-        n_perm_temporal = 2000
-        if getattr(self.configs, 'stats', None):
-            n_perm_temporal = int(getattr(self.configs.stats, 'n_perm_rm', n_perm_temporal))
-
-        UsefulStatesAnalyzer(UsefulStatesConfig(
-            metrics_state_csv=metrics_state,
-            stats_rm_csv=stats_rm,
-            palm_dir=palm_dir,
-            K=self.configs.hmm.K,
-            out_csv=out_csv,
-            out_json=out_json,
-            q_threshold=0.05,
-            n_perm_temporal=n_perm_temporal,
-        )).run()
-
-    def build_summary(self):
-        try:
-            SummaryBuilder(SummaryConfig(
-                hmm_dir=self.configs.paths.hmm_dir,
-                betas_dir=self.configs.paths.betas_dir,
-                K=self.configs.hmm.K,
-            )).run()
-        except Exception as e:
-            log.warning("summary_failed", extra={"err": str(e)})
-
     def run_all(self):
         """Run all pipeline stages in order, respecting `force` and config."""
         # Apply logging preferences from config (if any)
@@ -547,6 +492,7 @@ class Pipeline:
         ############# UNCOMMENT AKO HOĆEŠ PARCELACIJU ###################
         self.concat_ptseries() #Uses PtSeriesConcatenator from ptseries.py
         self.fit_hmm() #Uses HMMRunner(HMMConfig) from hmm_fit.py 
+        self.model_selection()
         self.qc() #Uses QCReporter from the qc.py
         self.state_maps() #StateMapEstimator(StateMapConfig)
         self.zscore_export() #<
@@ -561,19 +507,6 @@ class Pipeline:
         #1 Run PALM with this script or run it manually in MatLab/Octave
         if getattr(self.configs, 'palm', None) and self.configs.palm.enabled:
             self.palm()
-        
-        #2 Build summary if Palm #ToDo: build with or without PALM
-        if getattr(self.configs.summary, 'build_summary', False):
-            self.build_summary()
-            
-        #ToDo:
-        #3 Extract meaning and merging answer on "when + where"  
-        # if getattr(self.configs.summary, 'build_summary', False):
-        #     self.useful_states_summary()
-        try:
-            self.useful_states_summary()
-        except Exception as e:
-            log.warning("useful_states_failed", extra={"err": str(e)})
         
 """ Nepotrebno jer cli.py calls run_all() so keep it simple by removing the option
 to run pipeline.py as a script since cli.py preps and initiates the pipeline

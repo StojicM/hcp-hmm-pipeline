@@ -25,9 +25,10 @@ Constructed from `PipelineConfig` (see `hcp_hmm/pipeline.py`), invoked via the C
   - Outputs: model files, per-subject states/probabilities, and metrics under `hmm_dir`
   - Implementation: constructs `HMMConfig` and calls `HMMRunner.fit_and_export()`
 
-- `run_model_selection()` / `model_selection()`
+- `model_selection()`
   - Inputs: ptseries + concat outputs, `evaluation:` config in `pipeline.yaml`
   - Outputs: `model_selection/report.html` plus per-run artifacts under `model_selection/runs/`
+  - Runs only when `evaluation.enabled` is true
 
 - `qc()`
   - Inputs: HMM outputs (metrics, states), optional FD CSV
@@ -54,7 +55,7 @@ Notes
 - Downstream classes live under `hcp_hmm/*` and use dedicated configs to avoid tight coupling.
 
 **Key Artifacts**
-- `paths.hmm_dir/model.joblib` — fitted `GaussianHMM`
+- `paths.hmm_dir/model.joblib` — fitted Dynamax model (wrapped by a local adapter)
 - `paths.hmm_dir/per_subject_states/` — states and probabilities
 - `paths.hmm_dir/metrics/` — CSV summaries
 - `paths.betas_dir/` — subject and group betas; group subdir holds designs/merges

@@ -25,8 +25,6 @@ from .alignment import AlignmentConfig, AlignmentChecker
 from .stats_rm import StatsRMConfig, StatsRM
 from .stats_between import StatsBetweenConfig, StatsBetween
 from .palm import PalmConfig, PalmRunner
-from .summary import SummaryConfig, SummaryBuilder
-from .useful_states import UsefulStatesConfig, UsefulStatesAnalyzer
 
 
 def _handle_parcellate(namespace: argparse.Namespace) -> int:
@@ -66,6 +64,8 @@ def _handle_fit(namespace: argparse.Namespace) -> int:
         seed=namespace.seed,
         backend=namespace.backend,
         tr_sec=namespace.tr_sec,
+        ar_order=namespace.ar_order,
+        slds_latent_dim=namespace.slds_latent_dim,
         subjects_csv=Path(namespace.subjects_csv) if namespace.subjects_csv else None,
         atlas_dlabel=Path(namespace.atlas_dlabel) if getattr(namespace, "atlas_dlabel", None) else None,
         surface_dir=Path(namespace.surface_dir) if getattr(namespace, "surface_dir", None) else None,
@@ -202,66 +202,6 @@ def _handle_palm(namespace: argparse.Namespace) -> int:
     return 0
 
 
-def _handle_summary(namespace: argparse.Namespace) -> int:
-    """CLI handler: build figures/tables summarising fitted states."""
-    config_file = Path(namespace.config) if getattr(namespace, "config", None) else None
-    config_yaml = PipelineConfig.from_yaml(config_file) if config_file else None
-
-    def _path_or_default(arg_name: str, default: Path | None) -> Path | None:
-        val = getattr(namespace, arg_name)
-        if val:
-            return Path(val)
-        return default
-
-    hmm_dir = _path_or_default("hmm_dir", config_yaml.paths.hmm_dir if config_yaml else None)
-    betas_dir = _path_or_default("betas_dir", config_yaml.paths.betas_dir if config_yaml else None)
-    atlas_dlabel = _path_or_default("atlas_dlabel", config_yaml.paths.parcel_labels_dlabel if config_yaml else None)
-    surface_dir = _path_or_default("surface_dir", config_yaml.paths.surface_dir if config_yaml else None)
-    surface_left = _path_or_default("surface_left", config_yaml.paths.surface_left if config_yaml else None)
-    surface_right = _path_or_default("surface_right", config_yaml.paths.surface_right if config_yaml else None)
-    surface_left_inflated = _path_or_default("surface_left_inflated", config_yaml.paths.surface_left_inflated if config_yaml else None)
-    surface_right_inflated = _path_or_default("surface_right_inflated", config_yaml.paths.surface_right_inflated if config_yaml else None)
-
-    K = namespace.K if getattr(namespace, "K", None) is not None else (config_yaml.hmm.K if config_yaml else None)
-
-    missing = []
-    if hmm_dir is None:
-        missing.append("--hmm-dir or config.paths.hmm_dir")
-    if betas_dir is None:
-        missing.append("--betas-dir or config.paths.betas_dir")
-    if K is None:
-        missing.append("--K or config.hmm.K")
-    if missing:
-        raise SystemExit("summary requires: " + ", ".join(missing))
-
-    summary_config = SummaryConfig(
-        hmm_dir=hmm_dir,
-        betas_dir=betas_dir,
-        K=int(K),
-    )
-    outputs = SummaryBuilder(summary_config).run()
-    print("[summary] Wrote:")
-    for p in outputs:
-        print(f"  {p}")
-    return 0
-
-
-def _handle_useful_states(namespace: argparse.Namespace) -> int:
-    """CLI handler: summarise states passing temporal/spatial filters."""
-    config = UsefulStatesConfig(
-        metrics_state_csv=Path(namespace.metrics_state_csv),
-        stats_rm_csv=Path(namespace.stats_rm_csv),
-        palm_dir=Path(namespace.palm_dir),
-        K=int(namespace.K),
-        out_csv=Path(namespace.out_csv),
-        q_threshold=float(namespace.q_threshold),
-        n_perm_temporal=int(namespace.n_perm_temporal),
-        out_json=Path(namespace.out_json) if getattr(namespace, "out_json", None) else None,
-    )
-    UsefulStatesAnalyzer(config).run()
-    return 0
-
-
 def _handle_run(namespace: argparse.Namespace) -> int:
     """CLI handler: run the full pipeline from a YAML config."""
     config = PipelineConfig.from_yaml(Path(namespace.config))
@@ -282,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
                                      description="HCP HMM modular pipeline CLI")
     subparser = parser.add_subparsers(dest="cmd", required=True)
 
+#Parcelate
     p_par = subparser.add_parser("parcellate", help="Parcellate dtseries → ptseries using a dlabel atlas")
     p_par.add_argument("--indir", required=True, help="directory with *.dtseries.nii")
     p_par.add_argument("--dlabel", required=True, help="path to *.dlabel.nii atlas")
@@ -294,11 +235,13 @@ def main(argv: list[str] | None = None) -> int:
                        help="do not export atlas label table alongside outputs")
     p_par.set_defaults(handler=_handle_parcellate)
 
+#Concat
     p_concat = subparser.add_parser("concat", help="Concatenate *.ptseries.nii into train_X.npy + index")
     p_concat.add_argument("--indir", required=True)
     p_concat.add_argument("--outdir", required=True)
     p_concat.set_defaults(handler=_handle_concat)
-
+    
+#Fit HMM
     p_fit = subparser.add_parser("fit", help="Fit HMM and export states/metrics")
     p_fit.add_argument("--in-dir", required=True)
     p_fit.add_argument("--out-dir", required=True)
@@ -307,11 +250,13 @@ def main(argv: list[str] | None = None) -> int:
     p_fit.add_argument("--max-iter", type=int, default=500)
     p_fit.add_argument("--tol", type=float, default=1e-3)
     p_fit.add_argument("--seed", type=int, default=42)
-    p_fit.add_argument("--backend", choices=["hmmlearn","jax"], default="hmmlearn")
+    p_fit.add_argument("--backend", choices=["dynamax_arhmm", "dynamax_slds"], default="dynamax_arhmm")
+    p_fit.add_argument("--ar-order", type=int, default=1, help="ARHMM lag order (dynamax_arhmm)")
+    p_fit.add_argument("--slds-latent-dim", type=int, default=4, help="SLDS latent dimension (dynamax_slds)")
     p_fit.add_argument("--tr-sec", type=float, default=0.72)
     p_fit.add_argument("--subjects-csv", default=None,
                        help="Optional CSV with subject-level covariates (sex, age, etc.)")
-    # Optional surfaces for rendering betas during fit
+    # Optional surfaces for rendering betas during fit??
     p_fit.add_argument("--atlas-dlabel", default=None)
     p_fit.add_argument("--surface-dir", default=None)
     p_fit.add_argument("--surface-left", default=None)
@@ -319,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
     p_fit.add_argument("--surface-left-inflated", default=None)
     p_fit.add_argument("--surface-right-inflated", default=None)
     p_fit.set_defaults(handler=_handle_fit)
-
+#state-mps
     p_maps = subparser.add_parser("state-maps", help="Compute β maps from posteriors and ptseries")
     p_maps.add_argument("--ptseries-dir", required=True)
     p_maps.add_argument("--states-dir", required=True)
@@ -329,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
     p_maps.add_argument("--rcond", type=float, default=1e-6)
     p_maps.add_argument("--render-brainspace", action="store_true",
                         help="render per-subject BrainSpace figures (off by default)")
-    # Optional rendering
+# Optional rendering
     p_maps.add_argument("--atlas-dlabel", default=None)
     p_maps.add_argument("--surface-dir", default=None)
     p_maps.add_argument("--surface-left", default=None)
@@ -337,14 +282,14 @@ def main(argv: list[str] | None = None) -> int:
     p_maps.add_argument("--surface-left-inflated", default=None)
     p_maps.add_argument("--surface-right-inflated", default=None)
     p_maps.set_defaults(handler=_handle_state_maps)
-
+#z-score
     p_z = subparser.add_parser("zscore", help="Z-score β maps and export pscalars")
     p_z.add_argument("--ptseries-dir", required=True)
     p_z.add_argument("--betas-dir", required=True)
     p_z.add_argument("--K", type=int, required=True)
     p_z.add_argument("--redo", action="store_true")
     p_z.set_defaults(handler=_handle_zscore)
-
+#group-design
     p_gd = subparser.add_parser("group-design", help="Write FSL design files and subjects_used.csv")
     p_gd.add_argument("--subjects-csv", required=True)
     p_gd.add_argument("--out", required=True)
@@ -353,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
     p_gd.add_argument("--include-fd", action="store_true", help="Force inclusion of mean FD if available.")
     p_gd.add_argument("--no-fd", action="store_true", help="Force exclusion of mean FD even if available.")
     p_gd.set_defaults(handler=_handle_group_design)
-
+#group-merge?
     p_gm = subparser.add_parser("group-merge", help="Merge z-scored subject pscalars into per-state group pscalars")
     p_gm.add_argument("--betas-dir", required=True)
     p_gm.add_argument("--K", type=int, required=True)
@@ -362,26 +307,26 @@ def main(argv: list[str] | None = None) -> int:
     p_gm.add_argument("--parcel-labels-nii", default=None, help="Optional volumetric labels NIfTI (codes 1..P)")
     p_gm.add_argument("--atlas-dlabel", default=None, help="Optional atlas .dlabel.nii to paint dense dscalars")
     p_gm.set_defaults(handler=_handle_group_merge)
-
+#Check-aligmenet
     p_align = subparser.add_parser("check-alignment", help="Verify merged group order matches subjects order")
     p_align.add_argument("--columns-map", required=True)
     p_align.add_argument("--subjects-used", required=True)
     p_align.add_argument("--K", type=int, required=True)
     p_align.set_defaults(handler=_handle_check_alignment)
-
+#stats-repeated-measure
     p_rm = subparser.add_parser("stats-rm", help="Repeated-measures statewise stats")
     p_rm.add_argument("--in-csv", required=True)
     p_rm.add_argument("--K", type=int, required=True)
     p_rm.add_argument("--out", required=True)
     p_rm.add_argument("--n-perm", type=int, default=5000)
     p_rm.set_defaults(handler=_handle_stats_rm)
-
+#Stats-between
     p_b = subparser.add_parser("stats-between", help="Between-sub_handle_runject global stats")
     p_b.add_argument("--in-csv", required=True)
     p_b.add_argument("--out", required=True)
     p_b.add_argument("--n-perm", type=int, default=5000)
     p_b.set_defaults(handler=_handle_stats_between)
-
+#PALM
     p_palm = subparser.add_parser("palm", help="Run PALM on the merged group pscalar and design files")
     p_palm.add_argument("--group-dir", required=True, help="Directory with design.mat/.con/.grp and merged pscalar")
     p_palm.add_argument("--K", type=int, required=True)
@@ -394,41 +339,19 @@ def main(argv: list[str] | None = None) -> int:
     p_palm.add_argument("--state", type=int, default=None,
                         help="State index to analyse (omit to run all states)")
     p_palm.set_defaults(handler=_handle_palm)
-
-    p_summary = subparser.add_parser("summary", help="Build per-state summary tables and figures")
-    p_summary.add_argument("--config", help="Optional pipeline YAML to pull defaults from")
-    p_summary.add_argument("--hmm-dir", help="Directory with HMM outputs (metrics, states, summary)")
-    p_summary.add_argument("--betas-dir", help="Directory with subject/group betas (and PALM outputs)")
-    p_summary.add_argument("--K", type=int, help="Number of HMM states")
-    p_summary.add_argument("--atlas-dlabel", help="Atlas .dlabel.nii for optional label export")
-    p_summary.add_argument("--surface-dir", help="Directory containing fs_LR surfaces (auto-detect)")
-    p_summary.add_argument("--surface-left", help="Left hemisphere surface (.surf.gii)")
-    p_summary.add_argument("--surface-right", help="Right hemisphere surface (.surf.gii)")
-    p_summary.add_argument("--surface-left-inflated", help="Left hemisphere inflated surface (.surf.gii)")
-    p_summary.add_argument("--surface-right-inflated", help="Right hemisphere inflated surface (.surf.gii)")
-    p_summary.set_defaults(handler=_handle_summary)
-
-    p_useful = subparser.add_parser("useful-states", help="Summarise states that pass both temporal and spatial thresholds")
-    p_useful.add_argument("--metrics-state-csv", required=True, help="metrics_state_{K}S.csv path")
-    p_useful.add_argument("--stats-rm-csv", required=True, help="stats_state_{K}S_rm.csv path")
-    p_useful.add_argument("--palm-dir", required=True, help="Directory with PALM outputs (palm_*)")
-    p_useful.add_argument("--K", type=int, required=True, help="Number of states")
-    p_useful.add_argument("--out-csv", required=True, help="Where to write the summary CSV")
-    p_useful.add_argument("--out-json", help="Optional JSON output path")
-    p_useful.add_argument("--q-threshold", type=float, default=0.05, help="FDR/p-value threshold (default 0.05)")
-    p_useful.add_argument("--n-perm-temporal", type=int, default=2000, help="Permutations for temporal simple tests")
-    p_useful.set_defaults(handler=_handle_useful_states)
-
-    p_run = subparser.add_parser("run", help="Run the full pipeline from config YAML")
-    p_run.add_argument("--config", required=True, help="YAML with paths and parameters")
-    p_run.add_argument("--force", action="store_true", help="recompute even if outputs exist")
-    p_run.set_defaults(handler=_handle_run)
-
+#Model-select
     p_ms = subparser.add_parser("model-select", help="Sweep K/seed combinations and write model-selection report")
     p_ms.add_argument("--config", required=True, help="YAML with paths + evaluation settings")
     p_ms.add_argument("--force", action="store_true", help="recompute even if outputs exist")
     p_ms.set_defaults(handler=_handle_model_select)
 
+#RUN!!!!
+    p_run = subparser.add_parser("run", help="Run the full pipeline from config YAML")
+    p_run.add_argument("--config", required=True, help="YAML with paths and parameters")
+    p_run.add_argument("--force", action="store_true", help="recompute even if outputs exist")
+    p_run.set_defaults(handler=_handle_run)
+
+#HANDLER
     namespace = parser.parse_args(argv)
     handler = getattr(namespace, "handler", None)
     if handler is None:

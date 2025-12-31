@@ -17,22 +17,23 @@ This pipeline orchestrates the following stages:
      - Per-subject: `hmm/per_subject_states/{Subject}_state_vector_{K}S.txt` and `{Subject}_state_probs_{K}S.txt`.
      - Metrics: `hmm/metrics/metrics_state_{K}S.csv`, `hmm/metrics/metrics_global_{K}S.csv`, `hmm/metrics/transitions_long_{K}S.csv` (see docs/METRICS.md).
 
-4) State Maps (subject betas + group merge)
+4) Model Selection (optional)
+   - Runs a K/seed sweep when `evaluation.enabled` is true.
+   - Outputs: `hmm/model_selection/report.html` and per-run artifacts.
+
+5) State Maps (subject betas + group merge)
    - Input: ptseries and per-subject states.
    - Output: subject state betas `*_state_betas_{K}S.pscalar.nii` and a group-merged stack and tables.
 
-5) Z-scored Betas
+6) Z-scored Betas
    - Output: `*_state_betas_{K}S_zscored.pscalar.nii`.
 
-6) Group Design + Merge
+7) Group Design + Merge
    - Inputs: `subjects_info.csv` and betas.
    - Outputs: FSL-style design (`design*.{mat,con,grp}`), merged pscalar stacks and lists.
 
-7) PALM (optional)
+8) PALM (optional)
    - Runs PALM on the merged pscalars using provided designs.
-
-8) Summary + Useful States (optional)
-   - Gathers figures/tables and identifies states that satisfy simple temporal/spatial criteria.
 
 Configuration
 - Main configuration lives in `pipeline.yaml` under sections `paths`, `hmm`, `parcellate`, `palm`, `stats`, `logging`, `group_design`.

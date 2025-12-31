@@ -68,18 +68,6 @@ Example commands to run the HCP-HMM pipeline
               --in-csv data/derivatives/hmm/metrics/metrics_global_6S.csv \
               --out data/derivatives/hmm/metrics/stats_global_6S.csv
 
-    * Rebuild the per-state summary (WHEN/WHERE reports and BrainSpace figures):
-
-          python -m hcp_hmm.cli summary \
-              --hmm-dir data/derivatives/hmm \
-              --betas-dir data/derivatives/hmm/betas \
-              --K 6
-
-      Optional helpers:
-
-          python -m hcp_hmm.cli summary --config pipeline.yaml \
-              --surface-dir /path/to/fs_LR_surfaces
-
 3.  For PALM inference, ensure PALM is available and run:
 
         python -m hcp_hmm.cli palm \
@@ -87,3 +75,6 @@ Example commands to run the HCP-HMM pipeline
             --K 6 --n-perm 5000 --two-tailed --palm-bin palm
 
 Adjust the `K` value or paths to match your configuration.
+
+4.  Run model selection to test different K values and seeds
+        python -m hcp_hmm.cli model-select --config pipeline.yaml
