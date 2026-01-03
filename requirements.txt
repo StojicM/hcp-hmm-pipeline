@@ -4,6 +4,4 @@ joblib
 pyyaml
 nibabel
 matplotlib
-dynamax
-jax
-jaxlib
+ipython

@@ -15,11 +15,10 @@ Top-level sections:
 
 - `hmm`
   - `K` — number of HMM states
-  - `cov` — covariance type (`diag`, `tied`, or `full`)
-  - `backend` — `dynamax_arhmm` (default) or `dynamax_slds`
-  - `max_iter`, `tol`, `seed`, `tr_sec` — training hyperparameters
-  - `ar_order` — AR lag order for `dynamax_arhmm`
-  - `slds_latent_dim` — latent dimension for `dynamax_slds`
+  - `backend` — `arhmm` (default) or `slds` (planned)
+  - `max_iter`, `seed`, `tr_sec` — training hyperparameters
+  - `ar_order` — AR lag order for `arhmm`
+  - `slds_latent_dim` — latent dimension for `slds`
 
 - `parcellate`
   - `method` — aggregation inside parcels (e.g., `MEAN`)

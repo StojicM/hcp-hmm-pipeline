@@ -640,7 +640,9 @@ class ReliabilityDetector(BaseDetector):
         )
 
 
-def _read_json(path: Path) -> Dict[str, object]:
+def _read_json_optional(path: Path) -> Dict[str, object]:
+    if not path.exists():
+        return {}
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -694,7 +696,6 @@ class ModelSelectionRunner:
             out_dir / "metrics" / f"metrics_global_{Ktag}.csv",
             out_dir / "metrics" / f"transitions_long_{Ktag}.csv",
             out_dir / f"state_mean_patterns_{Ktag}.csv",
-            out_dir / "summary.json",
         ]
         missing = [str(p) for p in required if not p.exists()]
         if not missing and not self.cfg.force:
@@ -724,11 +725,9 @@ class ModelSelectionRunner:
                     in_dir=self.cfg.in_dir,
                     out_dir=out_dir,
                     K=int(K),
-                    cov=self.cfg.hmm.cov,
                     max_iter=int(self.cfg.hmm.max_iter),
-                    tol=float(self.cfg.hmm.tol),
                     seed=int(seed),
-                    backend=str(getattr(self.cfg.hmm, "backend", "dynamax_arhmm")),
+                    backend=str(getattr(self.cfg.hmm, "backend", "arhmm")),
                     tr_sec=float(self.cfg.hmm.tr_sec),
                     ar_order=int(getattr(self.cfg.hmm, "ar_order", 1)),
                     slds_latent_dim=int(getattr(self.cfg.hmm, "slds_latent_dim", 4)),
@@ -765,11 +764,9 @@ class ModelSelectionRunner:
             in_dir=self.cfg.in_dir,
             out_dir=out_dir,
             K=int(K),
-            cov=self.cfg.hmm.cov,
             max_iter=int(self.cfg.hmm.max_iter),
-            tol=float(self.cfg.hmm.tol),
             seed=int(seed),
-            backend=str(getattr(self.cfg.hmm, "backend", "dynamax_arhmm")),
+            backend=str(getattr(self.cfg.hmm, "backend", "arhmm")),
             tr_sec=float(self.cfg.hmm.tr_sec),
             ar_order=int(getattr(self.cfg.hmm, "ar_order", 1)),
             slds_latent_dim=int(getattr(self.cfg.hmm, "slds_latent_dim", 4)),
@@ -802,10 +799,9 @@ class ModelSelectionRunner:
         metrics_global = run_dir / "metrics" / f"metrics_global_{Ktag}.csv"
         transitions_long = run_dir / "metrics" / f"transitions_long_{Ktag}.csv"
         means_csv = run_dir / f"state_mean_patterns_{Ktag}.csv"
-        summary_json = run_dir / "summary.json"
         # Evaluation detectors should not depend on hard Viterbi outputs; keep
-        # the required inputs minimal (means + summary + posteriors).
-        required = [means_csv, summary_json]
+        # the required inputs minimal (means + posteriors).
+        required = [means_csv]
         missing = [str(p) for p in required if not p.exists()]
         if missing:
             raise FileNotFoundError("Missing evaluation inputs: " + ", ".join(missing))
@@ -828,7 +824,7 @@ class ModelSelectionRunner:
             K=int(K),
             seed=int(seed),
             cfg=self.cfg.evaluation,
-            hmm_summary=_read_json(summary_json),
+            hmm_summary=_read_json_optional(run_dir / "summary.json"),
             metrics_state=_read_csv_optional(metrics_state),
             metrics_global=_read_csv_optional(metrics_global),
             transitions_long=_read_csv_optional(transitions_long),
@@ -855,8 +851,7 @@ class ModelSelectionRunner:
         card: Dict[str, object] = {
             "K": int(K),
             "seed": int(seed),
-            "cov": str(self.cfg.hmm.cov),
-            "backend": str(getattr(self.cfg.hmm, "backend", "dynamax_arhmm")),
+            "backend": str(getattr(self.cfg.hmm, "backend", "arhmm")),
         }
         for k0 in ("loglik", "AIC", "BIC", "n_params", "n_subjects", "n_timepoints_total", "n_parcels"):
             if k0 in ctx.hmm_summary:
@@ -958,7 +953,7 @@ class ModelSelectionRunner:
         # Aggregate across seeds per K
         out_K = self.cfg.out_dir / "summary_by_K.csv"
         if not df_run.empty:
-            numeric_cols = [c for c in df_run.columns if c not in {"K", "seed", "cov", "backend"} and pd.api.types.is_numeric_dtype(df_run[c])]
+            numeric_cols = [c for c in df_run.columns if c not in {"K", "seed", "backend"} and pd.api.types.is_numeric_dtype(df_run[c])]
             grouped = df_run.groupby("K", sort=True)
             df_K = grouped[numeric_cols].agg(["mean", "std"]).reset_index()
             # Flatten multiindex columns

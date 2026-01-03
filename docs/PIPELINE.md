@@ -55,7 +55,7 @@ Notes
 - Downstream classes live under `hcp_hmm/*` and use dedicated configs to avoid tight coupling.
 
 **Key Artifacts**
-- `paths.hmm_dir/model.joblib` — fitted Dynamax model (wrapped by a local adapter)
+- `paths.hmm_dir/model.joblib` — fitted HMM model
 - `paths.hmm_dir/per_subject_states/` — states and probabilities
 - `paths.hmm_dir/metrics/` — CSV summaries
 - `paths.betas_dir/` — subject and group betas; group subdir holds designs/merges

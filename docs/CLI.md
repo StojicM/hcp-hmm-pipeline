@@ -19,7 +19,7 @@ Key commands
 
 - `fit` — Fit HMM and export per-subject states and metrics
   - Inputs: `--in-dir` (with `train_X.npy`), `--out-dir`, `--K`, optional surfaces/atlas
-  - Outputs: model/joblib, summary.json, per-subject states/probabilities, metrics CSVs
+  - Outputs: model/joblib, per-subject states/probabilities, metrics CSVs
 
 - `state-maps` — Estimate subject state betas and optional surfaces
   - Inputs: `--ptseries-dir`, `--states-dir`, `--out-dir`, `--K`

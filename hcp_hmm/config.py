@@ -38,16 +38,14 @@ class Paths:
 class HMMParams:
     """Hyperparameters for HMM fitting.
 
-    `K` states, covariance type, iteration cap, convergence tolerance,
-    RNG seed, and TR in seconds used for time-derived summaries.
+    `K` states, iteration cap, RNG seed, and TR in seconds used for
+    time-derived summaries.
     """
     K: int = 6
-    cov: str = "diag"
     max_iter: int = 500
-    tol: float = 1e-3
     seed: int = 42
     tr_sec: float = 0.72
-    backend: str = "dynamax_arhmm"  # dynamax_arhmm | dynamax_slds
+    backend: str = "arhmm"  # arhmm | slds
     ar_order: int = 1
     slds_latent_dim: int = 4
 

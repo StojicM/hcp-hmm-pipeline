@@ -8,6 +8,7 @@ paths:
   subjects_csv: data/subjects_info.csv
   # Optional volumetric labels NIfTI with integer codes 1..P matching parcel order
   # parcel_labels_nii: data/atlas/Yeo300_2mm_parcels.nii.gz
+  #ToDo remove?
   surface_dir: data/atlas/fsLR_32k_surfaces
 
 logging:
@@ -16,23 +17,17 @@ logging:
 
 hmm:
   K: 4
-  backend: dynamax_arhmm # dynamax_arhmm | dynamax_slds
-  ar_order: 1 # AR lag order for dynamax_arhmm
-  slds_latent_dim: 4 # latent dimension for dynamax_slds
-  # diag = each parcel independent
-  # full = the richest possible model but resource (data and processing) expensive
-  # tied* = middle ground: forces all states to share the same covariance matrix, 
-  # while each keeps its own mean.
-  cov: tied # diag | full | tied; read docs **
-  max_iter: 1000
-  tol: 0.001
+  backend: arhmm # arhmm | slds
+  ar_order: 1 # AR lag order for ARHMM
+  slds_latent_dim: 4 # latent dimension for SLDS (when enabled)
+  max_iter: 10
   seed: 42
   tr_sec: 0.72
 
 parcellate:
   method: MEAN 
   suffix: Yeo300
-  
+
 stats:
   n_perm_rm: 100        # permutations for repeated-measures state stats
   n_perm_between: 100   # permutations for global between-subject stats

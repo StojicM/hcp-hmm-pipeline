@@ -41,7 +41,6 @@ Example commands to run the HCP-HMM pipeline
               --in-dir data/derivatives/hmm \
               --out-dir data/derivatives/hmm \
               --K 6 \
-              --cov diag \
               --subjects-csv data/subjects_info.csv
 
     * Generate β maps, z-score them, and merge for group analyses:

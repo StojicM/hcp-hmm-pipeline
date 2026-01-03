@@ -1,6 +1,6 @@
 ## hcp_hmm/hmm_fit.py
 
-Fits a Dynamax HMM backend (ARHMM or SLDS) on concatenated parcel time series and exports per-subject state sequences, probabilities, and metrics.
+Fits the pipeline HMM backend (ARHMM now; SLDS planned) on concatenated parcel time series and exports per-subject state sequences, probabilities, and metrics.
 
 Inputs
 - `in_dir/train_X.npy` — stacked time × parcel array
@@ -15,8 +15,6 @@ Subject index schema
 
 Outputs (under `out_dir`)
 - `model.joblib`, `hmm_model_{K}S.pkl` — the fitted HMM
-- `summary.json` — training summary (loglik, param counts, shapes; AIC/BIC omitted for dynamax)
-- `state_transition_matrix_{K}S.txt` — K×K transition probabilities
 - `state_mean_patterns_{K}S.csv` — K×P state means
 - `per_subject_states/` — per-subject state vectors and probabilities
 - `metrics/` — three CSVs: statewise, global, and transitions long-form
@@ -41,38 +39,9 @@ Metrics (per subject)
 
 Notes
 - The training array is memory-mapped during fit to reduce RAM pressure.
-- Backend: `hmm.backend` chooses `dynamax_arhmm` or `dynamax_slds` (requires `dynamax` + `jax/jaxlib`). State means/covars are estimated from posteriors and AIC/BIC are omitted.
+- Backend: `hmm.backend` chooses `arhmm` (default). `slds` is planned but not implemented yet.
+- ARHMM uses streaming EM and diagonal noise to keep memory bounded; state means are estimated from posteriors and AIC/BIC are omitted.
 
 Interpreting entropy metrics
 - `occ_entropy_bits` (occupancy entropy): Shannon entropy of the stationary distribution `π` implied by `P`. Higher values indicate more uniform long-run occupancy across states; lower values indicate that the chain concentrates on a few states.
 - `entropy_rate_bits`: average uncertainty per step under the chain, computed as `∑_s π_s H(P[s, :])`. It captures both how mixed the occupancy is and how diffuse the transitions are. High values suggest many possible next-state choices on average; low values suggest persistent or deterministic transitions.
-
-
-Important `cov` param: 
-- Variance = how much one parcel wiggles over time.
-- Covariance = how much two parcels wiggle together over time.
-- A covariance matrix is just a big table listing this for every pair of parcels.
-
-1) Diagonal covariance - only cares about each parcel’s own wiggle size 
-[ Var(A)   0        0     ]
-[ 0        Var(B)   0     ]
-[ 0        0        Var(C)]
-fast, stable, states defined by different patterns of activation. 
-Note: diagonal covariance + z-scored input means "mirror-image histograms", which might not be representatnive of brain activity architecture
-resources: all threads at max capacity = fast but intense
-
-2) Full covariance - tracks how every parcel wiggles with every other parcel
-[ Var(A)   Cov(A,B)  Cov(A,C) ]
-[ Cov(A,B) Var(B)    Cov(B,C) ]
-[ Cov(A,C) Cov(B,C)  Var(C)   ]
-expensive, fragile, states defined by different interaction structures
-
-
-3) Tied covariance - same matrix as above, but shared across all states.
-Each state has its own mean vector:
-- State 1: mean = [A high, B low, C neutral]
-- State 2: mean = [A low, B high, C high]
-- State 3: mean = [A medium, B medium, C low]
-…but all share the same covariance map of relationships.
-stable compromise; states defined by activation shifts, but with a realistic shared correlation backbone.
-resources: one thread at max capacity = slow but lightweight

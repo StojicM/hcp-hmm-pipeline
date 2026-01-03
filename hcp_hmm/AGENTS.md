@@ -18,3 +18,5 @@ Commenting code
 
 Behavior
 - Ask before restructuring files.
+- If I explicitly say: "Suggestions?" then just give me suggestions without changing any files. 
+- Avoid making unnecessary fallbacks and dummy-proofing

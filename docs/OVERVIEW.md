@@ -13,7 +13,7 @@ This pipeline orchestrates the following stages:
 3) HMM Fit + Exports
    - Input: `hmm/train_X.npy`, `hmm/subjects_index.csv`.
    - Outputs:
-     - Model: `hmm/model.joblib`, `hmm/summary.json`, `hmm/state_transition_matrix_{K}S.txt`, `hmm/state_mean_patterns_{K}S.csv`.
+     - Model: `hmm/model.joblib`, `hmm/state_mean_patterns_{K}S.csv`.
      - Per-subject: `hmm/per_subject_states/{Subject}_state_vector_{K}S.txt` and `{Subject}_state_probs_{K}S.txt`.
      - Metrics: `hmm/metrics/metrics_state_{K}S.csv`, `hmm/metrics/metrics_global_{K}S.csv`, `hmm/metrics/transitions_long_{K}S.csv` (see docs/METRICS.md).
 
