@@ -66,11 +66,6 @@ def _handle_fit(namespace: argparse.Namespace) -> int:
         slds_latent_dim=namespace.slds_latent_dim,
         subjects_csv=Path(namespace.subjects_csv) if namespace.subjects_csv else None,
         atlas_dlabel=Path(namespace.atlas_dlabel) if getattr(namespace, "atlas_dlabel", None) else None,
-        surface_dir=Path(namespace.surface_dir) if getattr(namespace, "surface_dir", None) else None,
-        surface_left=Path(namespace.surface_left) if getattr(namespace, "surface_left", None) else None,
-        surface_right=Path(namespace.surface_right) if getattr(namespace, "surface_right", None) else None,
-        surface_left_inflated=Path(namespace.surface_left_inflated) if getattr(namespace, "surface_left_inflated", None) else None,
-        surface_right_inflated=Path(namespace.surface_right_inflated) if getattr(namespace, "surface_right_inflated", None) else None,
     )
     HMMRunner(config).fit_and_export()
     return 0

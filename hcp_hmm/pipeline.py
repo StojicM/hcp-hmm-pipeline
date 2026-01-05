@@ -81,11 +81,6 @@ class PipelineConfig:
             subjects_csv=P(data["paths"]["subjects_csv"]),
             fd_csv=P(data["paths"].get("fd_csv")),
             parcel_labels_nii=P(data["paths"].get("parcel_labels_nii")),
-            surface_dir=P(data["paths"].get("surface_dir")),
-            surface_left=P(data["paths"].get("surface_left")),
-            surface_right=P(data["paths"].get("surface_right")),
-            surface_left_inflated=P(data["paths"].get("surface_left_inflated")),
-            surface_right_inflated=P(data["paths"].get("surface_right_inflated")),
         )
 
         hmm = HMMParams(**data.get("hmm", {}))
@@ -202,11 +197,6 @@ class Pipeline:
             slds_latent_dim=getattr(self.configs.hmm, "slds_latent_dim", 4),
             subjects_csv=self.configs.paths.subjects_csv,
             atlas_dlabel=self.configs.paths.parcel_labels_dlabel,
-            surface_dir=self.configs.paths.surface_dir,
-            surface_left=self.configs.paths.surface_left,
-            surface_right=self.configs.paths.surface_right,
-            surface_left_inflated=self.configs.paths.surface_left_inflated,
-            surface_right_inflated=self.configs.paths.surface_right_inflated,
         )
         HMMRunner(Hconfigs).fit_and_export()
 
@@ -227,11 +217,6 @@ class Pipeline:
             evaluation=eval_cfg,
             subjects_csv=self.configs.paths.subjects_csv,
             atlas_dlabel=self.configs.paths.parcel_labels_dlabel,
-            surface_dir=self.configs.paths.surface_dir,
-            surface_left=self.configs.paths.surface_left,
-            surface_right=self.configs.paths.surface_right,
-            surface_left_inflated=self.configs.paths.surface_left_inflated,
-            surface_right_inflated=self.configs.paths.surface_right_inflated,
             force=self.force,
         )).run()
 

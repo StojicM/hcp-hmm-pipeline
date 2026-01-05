@@ -122,7 +122,7 @@ class HMMConfig:
     - `tr_sec`: TR in seconds (for converting TR counts to seconds in reports)
     - `ar_order`: AR lag order for ARHMM
     - `slds_latent_dim`: latent dimension for SLDS
-    - Atlas/surface paths kept for compatibility; rendering is disabled
+    - Atlas path kept for compatibility; rendering is disabled
     """
     in_dir: Path
     out_dir: Path
@@ -135,11 +135,6 @@ class HMMConfig:
     slds_latent_dim: int = 4
     subjects_csv: Path | None = None
     atlas_dlabel: Optional[Path] = None
-    surface_dir: Optional[Path] = None
-    surface_left: Optional[Path] = None
-    surface_right: Optional[Path] = None
-    surface_left_inflated: Optional[Path] = None
-    surface_right_inflated: Optional[Path] = None
 
 
 class HMMRunner:

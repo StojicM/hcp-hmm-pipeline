@@ -10,7 +10,6 @@ Top-level sections:
   - `betas_dir` — output dir for per-subject/group betas
   - `parcel_labels_dlabel` — atlas used for painting labels (defaults to `atlas_dlabel`)
   - `subjects_csv` — subject-level covariates CSV
-  - Optional surfaces: `surface_dir`, `surface_left`, `surface_right`, `surface_left_inflated`, `surface_right_inflated`
   - Optional volumetric labels: `parcel_labels_nii`
 
 - `hmm`

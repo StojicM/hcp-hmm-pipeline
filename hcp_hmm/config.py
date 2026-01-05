@@ -27,11 +27,6 @@ class Paths:
     fd_csv: Optional[Path] = None
     # Optional volumetric labels NIfTI with integer codes 1..P matching parcel order
     parcel_labels_nii: Optional[Path] = None
-    surface_dir: Optional[Path] = None
-    surface_left: Optional[Path] = None
-    surface_right: Optional[Path] = None
-    surface_left_inflated: Optional[Path] = None
-    surface_right_inflated: Optional[Path] = None
 
 
 @dataclass
@@ -92,11 +87,6 @@ class ParcellateParams:
 #             subjects_csv=P(data["paths"]["subjects_csv"]),
 #             fd_csv=P(data["paths"].get("fd_csv")),
 #             parcel_labels_nii=P(data["paths"].get("parcel_labels_nii")),
-#             surface_dir=P(data["paths"].get("surface_dir")),
-#             surface_left=P(data["paths"].get("surface_left")),
-#             surface_right=P(data["paths"].get("surface_right")),
-#             surface_left_inflated=P(data["paths"].get("surface_left_inflated")),
-#             surface_right_inflated=P(data["paths"].get("surface_right_inflated")),
 #         )
 
 #         hmm = HMMParams(**data.get("hmm", {}))

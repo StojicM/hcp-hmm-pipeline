@@ -664,11 +664,6 @@ class ModelSelectionConfig:
     evaluation: EvaluationParams
     subjects_csv: Optional[Path] = None
     atlas_dlabel: Optional[Path] = None
-    surface_dir: Optional[Path] = None
-    surface_left: Optional[Path] = None
-    surface_right: Optional[Path] = None
-    surface_left_inflated: Optional[Path] = None
-    surface_right_inflated: Optional[Path] = None
     force: bool = False
 
 
@@ -733,11 +728,6 @@ class ModelSelectionRunner:
                     slds_latent_dim=int(getattr(self.cfg.hmm, "slds_latent_dim", 4)),
                     subjects_csv=self.cfg.subjects_csv,
                     atlas_dlabel=self.cfg.atlas_dlabel,
-                    surface_dir=self.cfg.surface_dir,
-                    surface_left=self.cfg.surface_left,
-                    surface_right=self.cfg.surface_right,
-                    surface_left_inflated=self.cfg.surface_left_inflated,
-                    surface_right_inflated=self.cfg.surface_right_inflated,
                 )
                 HMMRunner(cfg).export_only(model_path=model_path)
                 missing_after = [str(p) for p in required if not p.exists()]
@@ -772,11 +762,6 @@ class ModelSelectionRunner:
             slds_latent_dim=int(getattr(self.cfg.hmm, "slds_latent_dim", 4)),
             subjects_csv=self.cfg.subjects_csv,
             atlas_dlabel=self.cfg.atlas_dlabel,
-            surface_dir=self.cfg.surface_dir,
-            surface_left=self.cfg.surface_left,
-            surface_right=self.cfg.surface_right,
-            surface_left_inflated=self.cfg.surface_left_inflated,
-            surface_right_inflated=self.cfg.surface_right_inflated,
         )
         HMMRunner(cfg).fit_and_export()
 

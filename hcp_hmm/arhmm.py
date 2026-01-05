@@ -11,9 +11,32 @@ N×T×D array in memory, then decodes each subject on demand.
 from dataclasses import dataclass
 from typing import List, Tuple
 
+import sys
 import numpy as np
 
+from .logger import get_logger
+
+log = get_logger(__name__)
+
 EPS = 1e-12
+
+
+def _progress_bar(pct: float, width: int = 50) -> str:
+    pct = max(0.0, min(1.0, pct))
+    filled = int(round(pct * width))
+    bar = "#" * filled + "-" * (width - filled)
+    return f"[{bar}] {pct * 100:5.1f}%"
+
+
+def _progress_line(
+    iter_idx: int,
+    n_iter: int,
+    pct: float,
+    delta: float | None = None,
+) -> str:
+    bar = _progress_bar(pct)
+    delta_text = "None" if delta is None else f"{delta:.6f}"
+    return f"{iter_idx}/{n_iter} >> {bar} delta={delta_text}"
 
 
 def _logsumexp(values: np.ndarray, axis=None) -> np.ndarray:
@@ -158,13 +181,31 @@ class ARHMM:
         sequences = _split_sequences(X, lengths)
         if not sequences:
             raise SystemExit("ARHMM fit requires at least one sequence.")
+        n_total = int(sum(seq.shape[0] for seq in sequences))
+        log.info(
+            "arhmm_fit_begin",
+            extra={
+                "K": int(self.n_states),
+                "ar_order": int(self.ar_order),
+                "n_sequences": int(len(sequences)),
+                "n_timepoints": n_total,
+                "n_features": int(sequences[0].shape[1]),
+            },
+        )
         self._init_params(sequences)
 
         K = int(self.n_states)
         D = int(sequences[0].shape[1])
         P = D * int(self.ar_order) + 1
+        n_seq = int(len(sequences))
+        n_iter = int(self.max_iter)
+        progress_every = max(1, int(n_seq / 10))
+        last_delta = 0.0
+        last_line_len = 0
+        is_tty = sys.stdout.isatty()
 
-        for _ in range(int(self.max_iter)):
+        prev_loglik = None
+        for it in range(n_iter):
             gamma_sum = np.zeros(K, dtype=float)
             gamma_init = np.zeros(K, dtype=float)
             xi_sum = np.zeros((K, K), dtype=float)
@@ -174,7 +215,8 @@ class ARHMM:
             y2_sum = np.zeros((K, D), dtype=float)
             loglik_total = 0.0
 
-            for seq in sequences:
+            processed_tr = 0
+            for i, seq in enumerate(sequences, 1):
                 y = seq.astype(float, copy=False)
                 lagged = _build_lagged(y, int(self.ar_order))
                 x_aug = np.concatenate([lagged, np.ones((y.shape[0], 1), dtype=float)], axis=1)
@@ -196,8 +238,40 @@ class ARHMM:
                     wxy_sum[k] += xw.T @ y
 
                 loglik_total += loglik
+                processed_tr += y.shape[0]
+                if i == 1 or (i % progress_every == 0):
+                    if i == n_seq:
+                        continue
+                    pct = float(i / max(n_seq, 1))
+                    line = _progress_line(
+                        iter_idx=int(it + 1),
+                        n_iter=n_iter,
+                        pct=pct,
+                        delta=last_delta,
+                    )
+                    if is_tty:
+                        if len(line) < last_line_len:
+                            line = line + " " * (last_line_len - len(line))
+                        sys.stdout.write("\r" + line)
+                        sys.stdout.flush()
+                        last_line_len = max(last_line_len, len(line))
+                    else:
+                        log.info(
+                            line,
+                            extra={
+                                "iter": int(it + 1),
+                                "seq": int(i),
+                                "n_sequences": n_seq,
+                                "timepoints_done": int(processed_tr),
+                                "timepoints_total": int(n_total),
+                                "pct": pct,
+                                "delta": last_delta,
+                            },
+                        )
 
             self.loglik_ = float(loglik_total)
+            delta = None if prev_loglik is None else float(self.loglik_ - prev_loglik)
+            delta_value = 0.0 if delta is None else delta
             self.startprob_ = gamma_init / max(gamma_init.sum(), EPS)
 
             row_sums = xi_sum.sum(axis=1, keepdims=True)
@@ -227,7 +301,42 @@ class ARHMM:
             self.weights_ = weights_new
             self.covars_ = covars_new
             self.means_ = means_new
+            final_pct = float(processed_tr / max(n_total, 1))
+            final_line = _progress_line(
+                iter_idx=int(it + 1),
+                n_iter=n_iter,
+                pct=final_pct,
+                delta=delta_value,
+            )
+            if is_tty:
+                if len(final_line) < last_line_len:
+                    final_line = final_line + " " * (last_line_len - len(final_line))
+                sys.stdout.write("\r" + final_line)
+                sys.stdout.flush()
+                last_line_len = max(last_line_len, len(final_line))
+            else:
+                log.info(
+                    final_line,
+                    extra={
+                        "iter": int(it + 1),
+                        "n_sequences": n_seq,
+                        "timepoints_done": int(processed_tr),
+                        "timepoints_total": int(n_total),
+                        "pct": final_pct,
+                        "delta": delta_value,
+                    },
+                )
+            prev_loglik = float(self.loglik_)
+            last_delta = delta_value
 
+        if is_tty and last_line_len > 0:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+
+        log.info(
+            "arhmm_fit_done",
+            extra={"loglik": float(self.loglik_ or 0.0), "iters": int(self.max_iter)},
+        )
         return self
 
     def _predict_sequence(self, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
